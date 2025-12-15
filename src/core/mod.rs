@@ -1,7 +1,11 @@
 pub mod callbacks;
+pub mod color;
 pub mod engine;
 pub mod engine_state;
 pub mod event_handler;
 pub mod events;
 pub mod input;
+pub mod render_context;
+pub mod surface_provider;
+pub mod vertex;
 pub mod window_config;

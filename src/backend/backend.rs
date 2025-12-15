@@ -17,16 +17,23 @@ pub enum BackendError {
 
     #[error("renderer setup failed: {0}")]
     RendererSetupFailed(String),
+    #[error("renderer init failed")]
+    RendererInit,
 }
 
 pub type BackendResult<T> = Result<T, BackendError>;
 
 /// Backend trait abstracts platform windowing and event loop.
-pub trait Backend {
-    fn create_window(&mut self, config: crate::core::window_config::WindowConfig) -> BackendResult<()>;
+pub trait WindowBackend {
+    fn create_window(
+        &mut self,
+        config: crate::core::window_config::WindowConfig,
+    ) -> BackendResult<()>;
     fn run(
         &mut self,
         handler: &mut dyn crate::core::event_handler::EventHandlerApi,
-        state: &mut crate::core::engine_state::EngineState,
     ) -> BackendResult<()>;
+
+    /// Returns a surface provider if the window has been created.
+    fn surface_provider(&self) -> Option<&dyn crate::core::surface_provider::SurfaceProvider>;
 }

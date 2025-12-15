@@ -1,53 +1,60 @@
-use crate::core::callbacks::Callbacks;
+use crate::core::callbacks::{Callbacks, CallbacksMut};
 use crate::core::engine_state::EngineState;
 use crate::core::events::{
     AxisMotionEvent, GestureEvent, ImeEvent, Key, KeyEvent, Modifiers, MouseButtonEvent,
     MouseWheelDelta, PanEvent, Position, Size, Theme, Touch, TouchpadPressureEvent,
 };
 use crate::core::input::Input;
+use crate::core::render_context::RenderContext;
+use crate::core::surface_provider::SurfaceProvider;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Trait used by the backend to invoke events.
 pub trait EventHandlerApi {
-    fn on_resize(&mut self, size: &Size);
-    fn on_move(&mut self, pos: &(i32, i32));
-    fn on_close(&mut self);
-    fn on_destroy(&mut self);
-    fn on_focus(&mut self, focused: &bool);
-    fn on_scale_factor_changed(&mut self, scale: &f64);
-    fn on_theme_changed(&mut self, theme: &Theme);
-    fn on_occluded(&mut self, occluded: &bool);
+    /// Called once a native window/display handle is ready for rendering.
+    fn on_surface_ready(&mut self, _surface: &dyn SurfaceProvider) {}
+    /// Called by the backend to indicate a frame tick. The engine
+    /// layer should update its `EngineState` and then invoke `on_update`.
+    fn on_tick(&mut self) {}
+    fn on_resize(&mut self, _size: &Size) {}
+    fn on_move(&mut self, _pos: &(i32, i32)) {}
+    fn on_close(&mut self) {}
+    fn on_destroy(&mut self) {}
+    fn on_focus(&mut self, _focused: &bool) {}
+    fn on_scale_factor_changed(&mut self, _scale: &f64) {}
+    fn on_theme_changed(&mut self, _theme: &Theme) {}
+    fn on_occluded(&mut self, _occluded: &bool) {}
 
-    fn on_key_pressed(&mut self, ev: &KeyEvent);
-    fn on_key_released(&mut self, ev: &KeyEvent);
-    fn on_modifiers_changed(&mut self, mods: &Modifiers);
-    fn on_ime(&mut self, ime: &ImeEvent);
+    fn on_key_pressed(&mut self, _ev: &KeyEvent) {}
+    fn on_key_released(&mut self, _ev: &KeyEvent) {}
+    fn on_modifiers_changed(&mut self, _mods: &Modifiers) {}
+    fn on_ime(&mut self, _ime: &ImeEvent) {}
 
-    fn on_mouse_button_pressed(&mut self, ev: &MouseButtonEvent);
-    fn on_mouse_button_released(&mut self, ev: &MouseButtonEvent);
-    fn on_mouse_move(&mut self, pos: &Position);
-    fn on_mouse_wheel(&mut self, delta: &MouseWheelDelta);
-    fn on_mouse_enter(&mut self);
-    fn on_mouse_leave(&mut self);
+    fn on_mouse_button_pressed(&mut self, _ev: &MouseButtonEvent) {}
+    fn on_mouse_button_released(&mut self, _ev: &MouseButtonEvent) {}
+    fn on_mouse_move(&mut self, _pos: &Position) {}
+    fn on_mouse_wheel(&mut self, _delta: &MouseWheelDelta) {}
+    fn on_mouse_enter(&mut self) {}
+    fn on_mouse_leave(&mut self) {}
 
-    fn on_touch(&mut self, touch: &Touch);
+    fn on_touch(&mut self, _touch: &Touch) {}
 
-    fn on_pinch(&mut self, gesture: &GestureEvent);
-    fn on_pan(&mut self, pan: &PanEvent);
-    fn on_rotate(&mut self, gesture: &GestureEvent);
-    fn on_double_tap(&mut self);
-    fn on_touchpad_pressure(&mut self, ev: &TouchpadPressureEvent);
+    fn on_pinch(&mut self, _gesture: &GestureEvent) {}
+    fn on_pan(&mut self, _pan: &PanEvent) {}
+    fn on_rotate(&mut self, _gesture: &GestureEvent) {}
+    fn on_double_tap(&mut self) {}
+    fn on_touchpad_pressure(&mut self, _ev: &TouchpadPressureEvent) {}
 
-    fn on_file_dropped(&mut self, path: &Path);
-    fn on_file_hovered(&mut self, path: &Path);
-    fn on_file_hover_cancelled(&mut self);
+    fn on_file_dropped(&mut self, _path: &Path) {}
+    fn on_file_hovered(&mut self, _path: &Path) {}
+    fn on_file_hover_cancelled(&mut self) {}
 
-    fn on_axis_motion(&mut self, ev: &AxisMotionEvent);
-    fn on_activation_token(&mut self, token: &str);
+    fn on_axis_motion(&mut self, _ev: &AxisMotionEvent) {}
+    fn on_activation_token(&mut self, _token: &str) {}
 
-    fn on_redraw(&mut self);
-    fn on_update(&mut self, state: &EngineState);
+    fn on_redraw(&mut self) {}
+    fn on_update(&mut self, _state: &EngineState) {}
 }
 
 /// Orchestrates user callbacks and input state.
@@ -105,8 +112,11 @@ pub struct EventHandler {
     on_activation_token: Callbacks<String>, // Wayland activation token
 
     // === GAME LOOP ===
-    on_redraw: Callbacks<()>,
+    pub on_redraw: Callbacks<()>,
     on_update: Callbacks<EngineState>,
+
+    // === RENDER CONTEXT CALLBACKS ===
+    pub on_render: CallbacksMut<RenderContext>,
 
     // === INPUT SNAPSHOT ===
     pub on_keys_state_changed: Callbacks<Vec<Key>>,
@@ -151,6 +161,7 @@ impl EventHandler {
             on_activation_token: Callbacks::new(),
             on_redraw: Callbacks::new(),
             on_update: Callbacks::new(),
+            on_render: CallbacksMut::new(),
             on_keys_state_changed: Callbacks::new(),
             pressed_keys: HashSet::new(),
             current_modifiers: Modifiers::default(),
@@ -205,6 +216,9 @@ impl EventHandler {
     }
     pub fn on_redraw<F: FnMut(&()) + 'static>(&mut self, f: F) -> usize {
         self.on_redraw.add(f)
+    }
+    pub fn on_render<F: FnMut(&mut RenderContext) + 'static>(&mut self, f: F) -> usize {
+        self.on_render.add(f)
     }
     pub fn on_update<F: FnMut(&EngineState) + 'static>(&mut self, f: F) -> usize {
         self.on_update.add(f)

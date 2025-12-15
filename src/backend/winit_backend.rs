@@ -3,14 +3,14 @@ use winit::dpi::LogicalSize;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Fullscreen, Window, WindowId};
 
-use crate::backend::backend::{Backend, BackendError, BackendResult};
-use crate::core::engine_state::EngineState;
+use crate::backend::backend::{BackendError, BackendResult, WindowBackend};
 use crate::core::event_handler::EventHandlerApi;
 use crate::core::events::{
     AxisMotionEvent, GestureEvent, ImeEvent, ImeKind, Key, KeyEvent, Modifiers, MouseButton,
     MouseButtonEvent, MouseWheelDelta, PanEvent, Position, Size, Theme, Touch, TouchPhase,
     TouchpadPressureEvent,
 };
+use crate::core::surface_provider::SurfaceProvider;
 use log::error;
 use std::time::{Duration, Instant};
 
@@ -20,7 +20,8 @@ use winit::event::{
 use winit::keyboard::{KeyCode, PhysicalKey};
 
 // Full conversion from winit keyboard to our Key enum
-fn convert_key(physical_key: PhysicalKey) -> Key { /* unchanged mapping */
+fn convert_key(physical_key: PhysicalKey) -> Key {
+    /* unchanged mapping */
     match physical_key {
         PhysicalKey::Code(code) => match code {
             // Letters
@@ -112,13 +113,41 @@ fn convert_key(physical_key: PhysicalKey) -> Key { /* unchanged mapping */
             KeyCode::Fn => Key::Fn,
             KeyCode::FnLock => Key::FnLock,
             // Function keys
-            KeyCode::F1 => Key::F1, KeyCode::F2 => Key::F2, KeyCode::F3 => Key::F3, KeyCode::F4 => Key::F4, KeyCode::F5 => Key::F5,
-            KeyCode::F6 => Key::F6, KeyCode::F7 => Key::F7, KeyCode::F8 => Key::F8, KeyCode::F9 => Key::F9, KeyCode::F10 => Key::F10,
-            KeyCode::F11 => Key::F11, KeyCode::F12 => Key::F12, KeyCode::F13 => Key::F13, KeyCode::F14 => Key::F14, KeyCode::F15 => Key::F15,
-            KeyCode::F16 => Key::F16, KeyCode::F17 => Key::F17, KeyCode::F18 => Key::F18, KeyCode::F19 => Key::F19, KeyCode::F20 => Key::F20,
-            KeyCode::F21 => Key::F21, KeyCode::F22 => Key::F22, KeyCode::F23 => Key::F23, KeyCode::F24 => Key::F24, KeyCode::F25 => Key::F25,
-            KeyCode::F26 => Key::F26, KeyCode::F27 => Key::F27, KeyCode::F28 => Key::F28, KeyCode::F29 => Key::F29, KeyCode::F30 => Key::F30,
-            KeyCode::F31 => Key::F31, KeyCode::F32 => Key::F32, KeyCode::F33 => Key::F33, KeyCode::F34 => Key::F34, KeyCode::F35 => Key::F35,
+            KeyCode::F1 => Key::F1,
+            KeyCode::F2 => Key::F2,
+            KeyCode::F3 => Key::F3,
+            KeyCode::F4 => Key::F4,
+            KeyCode::F5 => Key::F5,
+            KeyCode::F6 => Key::F6,
+            KeyCode::F7 => Key::F7,
+            KeyCode::F8 => Key::F8,
+            KeyCode::F9 => Key::F9,
+            KeyCode::F10 => Key::F10,
+            KeyCode::F11 => Key::F11,
+            KeyCode::F12 => Key::F12,
+            KeyCode::F13 => Key::F13,
+            KeyCode::F14 => Key::F14,
+            KeyCode::F15 => Key::F15,
+            KeyCode::F16 => Key::F16,
+            KeyCode::F17 => Key::F17,
+            KeyCode::F18 => Key::F18,
+            KeyCode::F19 => Key::F19,
+            KeyCode::F20 => Key::F20,
+            KeyCode::F21 => Key::F21,
+            KeyCode::F22 => Key::F22,
+            KeyCode::F23 => Key::F23,
+            KeyCode::F24 => Key::F24,
+            KeyCode::F25 => Key::F25,
+            KeyCode::F26 => Key::F26,
+            KeyCode::F27 => Key::F27,
+            KeyCode::F28 => Key::F28,
+            KeyCode::F29 => Key::F29,
+            KeyCode::F30 => Key::F30,
+            KeyCode::F31 => Key::F31,
+            KeyCode::F32 => Key::F32,
+            KeyCode::F33 => Key::F33,
+            KeyCode::F34 => Key::F34,
+            KeyCode::F35 => Key::F35,
             // Media
             KeyCode::MediaPlayPause => Key::MediaPlayPause,
             KeyCode::MediaStop => Key::MediaStop,
@@ -266,6 +295,7 @@ pub struct WinitBackend {
     current_modifiers: Modifiers,
     mouse_position: Position,
     fixed_frame_duration: Option<Duration>,
+    last_frame_instant: Instant,
 }
 
 impl WinitBackend {
@@ -281,6 +311,7 @@ impl WinitBackend {
             current_modifiers: Modifiers::default(),
             mouse_position: Position { x: 0.0, y: 0.0 },
             fixed_frame_duration: None,
+            last_frame_instant: Instant::now(),
         })
     }
 }
@@ -288,7 +319,6 @@ impl WinitBackend {
 struct WinitApp<'a> {
     backend: &'a mut WinitBackend,
     handler: &'a mut dyn EventHandlerApi,
-    state: &'a mut EngineState,
 }
 
 impl<'a> ApplicationHandler for WinitApp<'a> {
@@ -326,9 +356,12 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
 
         match event_loop.create_window(attrs) {
             Ok(win) => {
-                // Ensure an initial frame is requested
-                win.request_redraw();
+                // Provide surface to engine via handler, then request a redraw
                 self.backend.window = Some(win);
+                if let Some(w) = self.backend.window.as_ref() {
+                    self.handler.on_surface_ready(w as &dyn SurfaceProvider);
+                    w.request_redraw();
+                }
             }
             Err(e) => {
                 self.backend.window = None;
@@ -392,17 +425,24 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
 
                 match event.state {
                     ElementState::Pressed => {
-                        self.handler.on_key_pressed(&KeyEvent { key, modifiers: mods });
+                        self.handler.on_key_pressed(&KeyEvent {
+                            key,
+                            modifiers: mods,
+                        });
                     }
                     ElementState::Released => {
-                        self.handler.on_key_released(&KeyEvent { key, modifiers: mods });
+                        self.handler.on_key_released(&KeyEvent {
+                            key,
+                            modifiers: mods,
+                        });
                     }
                 }
             }
 
             WindowEvent::ModifiersChanged(new_mods) => {
                 self.backend.current_modifiers = convert_modifiers(new_mods.state());
-                self.handler.on_modifiers_changed(&self.backend.current_modifiers);
+                self.handler
+                    .on_modifiers_changed(&self.backend.current_modifiers);
             }
 
             WindowEvent::Ime(ime) => {
@@ -411,7 +451,10 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
 
             // === MOUSE ===
             WindowEvent::CursorMoved { position, .. } => {
-                let pos = Position { x: position.x as f32, y: position.y as f32 };
+                let pos = Position {
+                    x: position.x as f32,
+                    y: position.y as f32,
+                };
                 self.backend.mouse_position = pos;
                 self.handler.on_mouse_move(&pos);
             }
@@ -419,7 +462,10 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
             WindowEvent::MouseInput { state, button, .. } => {
                 let btn = convert_mouse_button(button);
                 let pos = self.backend.mouse_position;
-                let ev = MouseButtonEvent { button: btn, position: pos };
+                let ev = MouseButtonEvent {
+                    button: btn,
+                    position: pos,
+                };
                 match state {
                     ElementState::Pressed => self.handler.on_mouse_button_pressed(&ev),
                     ElementState::Released => self.handler.on_mouse_button_released(&ev),
@@ -445,13 +491,19 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
 
             // === GESTURES ===
             WindowEvent::PinchGesture { delta, phase, .. } => {
-                self.handler.on_pinch(&GestureEvent { phase: convert_touch_phase(phase), delta });
+                self.handler.on_pinch(&GestureEvent {
+                    phase: convert_touch_phase(phase),
+                    delta,
+                });
             }
 
             WindowEvent::PanGesture { delta, phase, .. } => {
                 self.handler.on_pan(&PanEvent {
                     phase: convert_touch_phase(phase),
-                    delta: Position { x: delta.x, y: delta.y },
+                    delta: Position {
+                        x: delta.x,
+                        y: delta.y,
+                    },
                 });
             }
 
@@ -460,11 +512,17 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
             }
 
             WindowEvent::RotationGesture { delta, phase, .. } => {
-                self.handler.on_rotate(&GestureEvent { phase: convert_touch_phase(phase), delta: delta as f64 });
+                self.handler.on_rotate(&GestureEvent {
+                    phase: convert_touch_phase(phase),
+                    delta: delta as f64,
+                });
             }
 
-            WindowEvent::TouchpadPressure { pressure, stage, .. } => {
-                self.handler.on_touchpad_pressure(&TouchpadPressureEvent { pressure, stage });
+            WindowEvent::TouchpadPressure {
+                pressure, stage, ..
+            } => {
+                self.handler
+                    .on_touchpad_pressure(&TouchpadPressureEvent { pressure, stage });
             }
 
             // === FILE DROP ===
@@ -482,7 +540,8 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
 
             // === GAMEPAD/JOYSTICK ===
             WindowEvent::AxisMotion { axis, value, .. } => {
-                self.handler.on_axis_motion(&AxisMotionEvent { axis, value });
+                self.handler
+                    .on_axis_motion(&AxisMotionEvent { axis, value });
             }
 
             // === SPECIAL ===
@@ -492,10 +551,9 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
 
             // === REDRAW ===
             WindowEvent::RedrawRequested => {
-                // Frame begin: update timing then notify
-                self.state.update();
-                self.handler.on_update(self.state);
-                // Then ask render callbacks
+                // Frame tick: let engine update its state
+                self.handler.on_tick();
+                self.backend.last_frame_instant = Instant::now();
                 self.handler.on_redraw();
             }
         }
@@ -504,7 +562,7 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         // Fixed FPS management
         if let Some(frame_dur) = self.backend.fixed_frame_duration {
-            let target = self.state.last_frame_instant() + frame_dur;
+            let target = self.backend.last_frame_instant + frame_dur;
             let now = Instant::now();
             if now >= target {
                 if let Some(win) = self.backend.window.as_ref() {
@@ -513,28 +571,38 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
             } else {
                 _event_loop.set_control_flow(ControlFlow::WaitUntil(target));
             }
-        } else if let Some(win) = self.backend.window.as_ref().filter(|_| self.backend.continuous) {
+        } else if let Some(win) = self
+            .backend
+            .window
+            .as_ref()
+            .filter(|_| self.backend.continuous)
+        {
             win.request_redraw();
         }
     }
 }
 
-impl Backend for WinitBackend {
-    fn create_window(&mut self, config: crate::core::window_config::WindowConfig) -> BackendResult<()> {
+impl WindowBackend for WinitBackend {
+    fn create_window(
+        &mut self,
+        config: crate::core::window_config::WindowConfig,
+    ) -> BackendResult<()> {
         // Store the config so resumed() can translate it to winit attributes
         self.pending_config = Some(config);
         Ok(())
     }
 
-    fn run(
-        &mut self,
-        handler: &mut dyn EventHandlerApi,
-        state: &mut EngineState,
-    ) -> BackendResult<()> {
-        let event_loop = self.event_loop.take().ok_or(BackendError::EventLoopConsumed)?;
+    fn run(&mut self, handler: &mut dyn EventHandlerApi) -> BackendResult<()> {
+        let event_loop = self
+            .event_loop
+            .take()
+            .ok_or(BackendError::EventLoopConsumed)?;
         event_loop.set_control_flow(ControlFlow::Wait);
 
-        let mut app = WinitApp { backend: self, handler, state };
+        let mut app = WinitApp {
+            backend: self,
+            handler,
+        };
 
         match event_loop.run_app(&mut app) {
             Ok(()) => {
@@ -546,5 +614,17 @@ impl Backend for WinitBackend {
             }
             Err(e) => Err(BackendError::PlatformError(format!("{:?}", e))),
         }
+    }
+
+    fn surface_provider(&self) -> Option<&dyn SurfaceProvider> {
+        // Expose the window as a SurfaceProvider when available
+        self.window.as_ref().map(|w| w as &dyn SurfaceProvider)
+    }
+}
+
+impl SurfaceProvider for Window {
+    fn size(&self) -> (u32, u32) {
+        let size = self.inner_size();
+        (size.width, size.height)
     }
 }

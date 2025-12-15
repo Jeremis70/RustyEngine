@@ -36,16 +36,16 @@ impl Default for WindowConfig {
 impl WindowConfig {
     /// Validate width/height and target_fps if provided.
     pub fn validate(&self) -> Result<(), String> {
-        if let (Some(w), Some(h)) = (self.width, self.height) {
-            if w == 0 || h == 0 {
-                return Err("Width and height must be > 0".into());
-            }
+        if let (Some(w), Some(h)) = (self.width, self.height)
+            && (w == 0 || h == 0)
+        {
+            return Err("Width and height must be > 0".into());
         }
 
-        if let Some(fps) = self.target_fps {
-            if fps == 0 {
-                return Err("target_fps must be > 0".into());
-            }
+        if let Some(fps) = self.target_fps
+            && fps == 0
+        {
+            return Err("target_fps must be > 0".into());
         }
 
         Ok(())
