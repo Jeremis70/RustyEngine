@@ -1,0 +1,21 @@
+pub mod demos;
+
+/// Changez cette constante pour lancer une démo différente.
+const ACTIVE_DEMO: DemoSelector = DemoSelector::Showcase;
+
+#[derive(Clone, Copy)]
+enum DemoSelector {
+    Showcase,
+    Template,
+}
+
+pub fn install_active_demo(engine: &mut crate::core::engine::Engine) {
+    match ACTIVE_DEMO {
+        DemoSelector::Showcase => demos::showcase::install(engine),
+        DemoSelector::Template => demos::template::install(engine),
+    }
+}
+
+pub fn list_available() -> [&'static str; 2] {
+    ["Showcase", "Template"]
+}

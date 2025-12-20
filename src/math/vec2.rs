@@ -1,4 +1,6 @@
 // math/vec2.rs
+use crate::core::events::Position;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vec2 {
     pub x: f32,
@@ -10,6 +12,13 @@ impl Vec2 {
 
     pub fn new(x: f32, y: f32) -> Self {
         Self { x, y }
+    }
+
+    pub fn hadamard(self, other: Vec2) -> Vec2 {
+        Vec2 {
+            x: self.x * other.x,
+            y: self.y * other.y,
+        }
     }
 
     pub fn add(self, other: Vec2) -> Vec2 {
@@ -40,6 +49,14 @@ impl Vec2 {
     pub fn normalize(self) -> Vec2 {
         let len = self.length().max(1e-6);
         self.scale(1.0 / len)
+    }
+
+    pub fn rotated(self, angle: f32) -> Vec2 {
+        let (s, c) = angle.sin_cos();
+        Vec2 {
+            x: self.x * c - self.y * s,
+            y: self.x * s + self.y * c,
+        }
     }
 
     pub fn to_array(self) -> [f32; 2] {
@@ -107,6 +124,24 @@ impl std::ops::Neg for Vec2 {
         Vec2 {
             x: -self.x,
             y: -self.y,
+        }
+    }
+}
+
+impl From<Position> for Vec2 {
+    fn from(value: Position) -> Self {
+        Vec2 {
+            x: value.x,
+            y: value.y,
+        }
+    }
+}
+
+impl From<&Position> for Vec2 {
+    fn from(value: &Position) -> Self {
+        Vec2 {
+            x: value.x,
+            y: value.y,
         }
     }
 }

@@ -1,5 +1,6 @@
 use crate::core::surface_provider::SurfaceProvider;
 use crate::core::vertex::Vertex as CoreVertex;
+use crate::core::window_config::WindowConfig;
 use crate::render::renderer::{RenderError, RenderResult, Renderer};
 use raw_window_handle::{DisplayHandle, WindowHandle};
 use wgpu::util::DeviceExt;
@@ -78,7 +79,11 @@ impl VertexGPU {
 }
 
 impl Renderer for WgpuRenderer {
-    fn init(&mut self, surface_provider: &dyn SurfaceProvider) -> RenderResult<()> {
+    fn init(
+        &mut self,
+        surface_provider: &dyn SurfaceProvider,
+        config: Option<&WindowConfig>,
+    ) -> RenderResult<()> {
         self.size = surface_provider.size();
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -113,18 +118,42 @@ impl Renderer for WgpuRenderer {
         .map_err(|_| RenderError)?;
 
         let caps = surface.get_capabilities(&adapter);
+        let vsync_enabled = config.and_then(|cfg| cfg.vsync).unwrap_or(false);
+        let present_mode = if vsync_enabled {
+            [
+                wgpu::PresentMode::Fifo,
+                wgpu::PresentMode::FifoRelaxed,
+                wgpu::PresentMode::AutoVsync,
+                wgpu::PresentMode::Mailbox,
+            ]
+            .into_iter()
+            .find(|mode| caps.present_modes.iter().any(|m| m == mode))
+            .unwrap_or(caps.present_modes[0])
+        } else {
+            [
+                wgpu::PresentMode::AutoNoVsync,
+                wgpu::PresentMode::Immediate,
+                wgpu::PresentMode::Mailbox,
+            ]
+            .into_iter()
+            .find(|mode| caps.present_modes.iter().any(|m| m == mode))
+            .unwrap_or_else(|| {
+                [
+                    wgpu::PresentMode::Fifo,
+                    wgpu::PresentMode::FifoRelaxed,
+                    wgpu::PresentMode::AutoVsync,
+                ]
+                .into_iter()
+                .find(|mode| caps.present_modes.iter().any(|m| m == mode))
+                .unwrap_or(caps.present_modes[0])
+            })
+        };
         let format = caps
             .formats
             .iter()
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(caps.formats[0]);
-        let present_mode = caps
-            .present_modes
-            .iter()
-            .copied()
-            .find(|m| *m == wgpu::PresentMode::Fifo)
-            .unwrap_or(wgpu::PresentMode::AutoVsync);
         let alpha_mode = caps.alpha_modes[0];
 
         let config = wgpu::SurfaceConfiguration {

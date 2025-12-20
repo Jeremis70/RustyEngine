@@ -91,6 +91,23 @@ impl Color {
     pub fn to_rgba(self) -> [f32; 4] {
         [self.r, self.g, self.b, self.a]
     }
+
+    pub fn to_linear_rgba(self) -> [f32; 4] {
+        [
+            Self::srgb_to_linear(self.r),
+            Self::srgb_to_linear(self.g),
+            Self::srgb_to_linear(self.b),
+            self.a,
+        ]
+    }
+
+    fn srgb_to_linear(component: f32) -> f32 {
+        if component <= 0.04045 {
+            component / 12.92
+        } else {
+            ((component + 0.055) / 1.055).powf(2.4)
+        }
+    }
 }
 
 impl From<String> for Color {
@@ -520,5 +537,23 @@ mod tests {
         assert!((comp.g - 0.5).abs() < 1e-6);
         assert!((comp.b - 0.25).abs() < 1e-6);
         assert!((comp.a - 0.6).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_color_to_linear_rgba_roundtrip() {
+        let color = Color::from("#accac1");
+        let linear = color.to_linear_rgba();
+        assert!((linear_to_srgb(linear[0]) - color.r).abs() < 1e-6);
+        assert!((linear_to_srgb(linear[1]) - color.g).abs() < 1e-6);
+        assert!((linear_to_srgb(linear[2]) - color.b).abs() < 1e-6);
+        assert!((linear[3] - color.a).abs() < 1e-6);
+    }
+
+    fn linear_to_srgb(component: f32) -> f32 {
+        if component <= 0.0031308 {
+            component * 12.92
+        } else {
+            1.055 * component.powf(1.0 / 2.4) - 0.055
+        }
     }
 }

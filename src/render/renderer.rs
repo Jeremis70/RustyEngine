@@ -1,5 +1,6 @@
 use crate::core::surface_provider::SurfaceProvider;
 use crate::core::vertex::Vertex;
+use crate::core::window_config::WindowConfig;
 
 pub type RenderResult<T> = Result<T, RenderError>;
 
@@ -7,7 +8,11 @@ pub type RenderResult<T> = Result<T, RenderError>;
 pub struct RenderError;
 
 pub trait Renderer {
-    fn init(&mut self, surface: &dyn SurfaceProvider) -> RenderResult<()>;
+    fn init(
+        &mut self,
+        surface: &dyn SurfaceProvider,
+        config: Option<&WindowConfig>,
+    ) -> RenderResult<()>;
     fn resize(&mut self, new_size: (u32, u32));
     fn present(&mut self) -> RenderResult<()>;
     fn set_clear_color(&mut self, rgba: [f32; 4]);

@@ -28,7 +28,7 @@ impl Default for WindowConfig {
             transparent: Some(false),
             continuous: Some(false),
             target_fps: None,
-            vsync: Some(true),
+            vsync: Some(false),
         }
     }
 }

@@ -4,21 +4,18 @@ mod line;
 mod polygon;
 mod polyline;
 mod rectangle;
+mod shape_ref;
+mod traits;
+mod transform;
 mod triangle;
 
 pub use circle::Circle;
+pub use ellipse::Ellipse;
+pub use line::Line;
 pub use polygon::Polygon;
+pub use polyline::Polyline;
 pub use rectangle::Rectangle;
+pub use shape_ref::{ShapeRef, shapes_intersect};
+pub use traits::{Collider, Drawable};
+pub use transform::Transform2d;
 pub use triangle::Triangle;
-
-use crate::core::render_context::RenderContext;
-use crate::math::vec2::Vec2;
-
-pub trait Collider {
-    fn contains_point(&self, point: Vec2) -> bool;
-    fn intersects(&self, other: &Self) -> bool;
-}
-
-pub trait Drawable {
-    fn draw(&self, ctx: &mut RenderContext);
-}

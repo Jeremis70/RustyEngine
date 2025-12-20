@@ -1,4 +1,4 @@
-use crate::audio::{AudioSystem, RodioBackend};
+use crate::audio::{AudioError, AudioSystem, RodioBackend};
 use crate::backend::backend::{BackendError, BackendResult, WindowBackend};
 use crate::core::engine_state::EngineState;
 use crate::core::event_handler::EventHandler;
@@ -21,25 +21,32 @@ pub struct Engine {
     renderer: Box<dyn Renderer>,
 
     window_size: (u32, u32),
+    window_config: Option<WindowConfig>,
 }
 
 impl Engine {
-    pub fn new(backend: Box<dyn WindowBackend>, renderer: Box<dyn Renderer>) -> Self {
-        let audio = AudioSystem::new(Box::new(RodioBackend::new()));
-        Self {
+    pub fn new(
+        backend: Box<dyn WindowBackend>,
+        renderer: Box<dyn Renderer>,
+    ) -> Result<Self, AudioError> {
+        let audio_backend = RodioBackend::new()?;
+        let audio = AudioSystem::new(Box::new(audio_backend));
+        Ok(Self {
             events: EventHandler::new(),
             state: EngineState::new(),
             audio,
             backend,
             renderer,
             window_size: (1, 1),
-        }
+            window_config: None,
+        })
     }
 
     /// Create a window via the backend. Returns an error if the backend fails.
     pub fn create_window(&mut self, config: WindowConfig) -> BackendResult<()> {
         // Validate window configuration before passing to backend
         config.validate().map_err(BackendError::InvalidConfig)?;
+        self.window_config = Some(config.clone());
         self.backend.create_window(config)
     }
 
@@ -52,12 +59,13 @@ impl Engine {
             initialized: bool,
             state: &'a mut EngineState,
             window_size: &'a mut (u32, u32),
+            window_config: Option<&'a WindowConfig>,
         }
 
         impl<'a> EventHandlerApi for Forwarder<'a> {
             fn on_surface_ready(&mut self, surface: &dyn SurfaceProvider) {
                 if !self.initialized {
-                    let _ = self.renderer.init(surface);
+                    let _ = self.renderer.init(surface, self.window_config);
                     self.initialized = true;
                 }
             }
@@ -195,7 +203,7 @@ impl Engine {
                 let mut ctx = RenderContext::new(*self.window_size);
                 self.events.on_render.invoke(&mut ctx);
                 if let Some(color) = ctx.clear_color {
-                    let [r, g, b, a] = color.to_rgba();
+                    let [r, g, b, a] = color.to_linear_rgba();
                     self.renderer.set_clear_color([r, g, b, a]);
                 }
                 if !ctx.vertices.is_empty() {
@@ -213,6 +221,7 @@ impl Engine {
             initialized: false,
             state: &mut self.state,
             window_size: &mut self.window_size,
+            window_config: self.window_config.as_ref(),
         };
 
         self.backend.run(&mut forwarder)
