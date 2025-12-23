@@ -3,14 +3,14 @@ use winit::dpi::LogicalSize;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Fullscreen, Window, WindowId};
 
-use crate::backend::backend::{BackendError, BackendResult, WindowBackend};
-use crate::core::event_handler::EventHandlerApi;
+use crate::backend::surface_provider::SurfaceProvider;
+use crate::backend::window_backend::{BackendError, BackendResult, WindowBackend};
+use crate::core::events::EventHandlerApi;
 use crate::core::events::{
     AxisMotionEvent, GestureEvent, ImeEvent, ImeKind, Key, KeyEvent, Modifiers, MouseButton,
     MouseButtonEvent, MouseWheelDelta, PanEvent, Position, Size, Theme, Touch, TouchPhase,
     TouchpadPressureEvent,
 };
-use crate::core::surface_provider::SurfaceProvider;
 use log::error;
 use std::time::{Duration, Instant};
 
@@ -289,7 +289,7 @@ fn convert_theme(theme: winit::window::Theme) -> Theme {
 pub struct WinitBackend {
     event_loop: Option<EventLoop<()>>,
     window: Option<Window>,
-    pending_config: Option<crate::core::window_config::WindowConfig>,
+    pending_config: Option<crate::backend::window::WindowConfig>,
     last_error: Option<BackendError>,
     continuous: bool,
     current_modifiers: Modifiers,
@@ -313,6 +313,32 @@ impl WinitBackend {
             fixed_frame_duration: None,
             last_frame_instant: Instant::now(),
         })
+    }
+
+    /// Set target FPS for frame limiting
+    ///
+    /// # Arguments
+    /// * `fps` - Desired FPS (0 = unlimited)
+    pub fn set_target_fps(&mut self, fps: u32) {
+        if fps > 0 {
+            self.fixed_frame_duration = Some(Duration::from_secs_f64(1.0 / fps as f64));
+            self.continuous = false;
+        } else {
+            self.fixed_frame_duration = None;
+            self.continuous = true;
+        }
+    }
+
+    /// Sleep to enforce frame rate limit (if set)
+    /// Should be called once per frame after rendering
+    fn frame_limiter_sleep(&self) {
+        if let Some(target_time) = self.fixed_frame_duration {
+            let elapsed = self.last_frame_instant.elapsed();
+            if elapsed < target_time {
+                let sleep_time = target_time - elapsed;
+                std::thread::sleep(sleep_time);
+            }
+        }
     }
 }
 
@@ -555,6 +581,8 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
                 self.handler.on_tick();
                 self.backend.last_frame_instant = Instant::now();
                 self.handler.on_redraw();
+                // Apply frame limiter if needed
+                self.backend.frame_limiter_sleep();
             }
         }
     }
@@ -583,10 +611,7 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
 }
 
 impl WindowBackend for WinitBackend {
-    fn create_window(
-        &mut self,
-        config: crate::core::window_config::WindowConfig,
-    ) -> BackendResult<()> {
+    fn create_window(&mut self, config: crate::backend::window::WindowConfig) -> BackendResult<()> {
         // Store the config so resumed() can translate it to winit attributes
         self.pending_config = Some(config);
         Ok(())

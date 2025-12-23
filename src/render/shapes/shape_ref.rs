@@ -104,7 +104,7 @@ fn point_in_polygon(point: Vec2, polygon: &[Vec2]) -> bool {
             return true;
         }
 
-        let crosses = ((*current).y > point.y) != (prev.y > point.y);
+        let crosses = (current.y > point.y) != (prev.y > point.y);
         if crosses {
             let denom = prev.y - current.y;
             if denom.abs() <= f32::EPSILON {

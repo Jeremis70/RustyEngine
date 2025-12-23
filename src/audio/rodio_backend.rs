@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use rodio::Source;
+use rodio::{OutputStream, OutputStreamBuilder, Source};
 
-use crate::audio::{AudioBackend, AudioError, AudioResult, LoadStrategy, SoundId};
+use crate::audio::{AudioBackend, AudioError, AudioResult, LoadStrategy, SoundGroup, SoundId};
 
 struct StreamingAudio {
     path: PathBuf,
@@ -23,16 +23,26 @@ struct SoundEntry {
     data: AudioData,
     duration: Option<Duration>,
     volume: f32,
+    pan: f32,          // -1.0 (left) to 1.0 (right), 0.0 is center
+    pitch: f32,        // Playback speed multiplier
+    group: SoundGroup, // Which group this sound belongs to
+}
+
+impl Default for SoundEntry {
+    fn default() -> Self {
+        panic!("SoundEntry::default() should not be used directly, as AudioData::Buffered requires a valid source");
+    }
 }
 
 pub struct RodioBackend {
     sounds: HashMap<SoundId, SoundEntry>,
     active_sinks: Mutex<HashMap<SoundId, Vec<rodio::Sink>>>,
     next_id: u32,
-    _stream: rodio::OutputStream,
-    handle: rodio::OutputStreamHandle,
+    _stream: Option<OutputStream>,
+    mixer: Arc<rodio::mixer::Mixer>,
     streaming_threshold: u64,
     master_volume: f32,
+    group_volumes: HashMap<u8, f32>, // Group ID -> Volume
 }
 
 impl RodioBackend {
@@ -43,15 +53,27 @@ impl RodioBackend {
     }
 
     pub fn with_streaming_threshold(threshold: u64) -> AudioResult<Self> {
-        let (stream, handle) = rodio::OutputStream::try_default()?;
+        // Try to create output stream
+        let stream = OutputStreamBuilder::open_default_stream()?;
+        let mixer = Arc::new(stream.mixer().clone());
+
+        let mut group_volumes = HashMap::new();
+        // Initialize all standard groups with full volume
+        group_volumes.insert(SoundGroup::Master.as_id(), 1.0);
+        group_volumes.insert(SoundGroup::Music.as_id(), 1.0);
+        group_volumes.insert(SoundGroup::Sfx.as_id(), 1.0);
+        group_volumes.insert(SoundGroup::Ui.as_id(), 1.0);
+        group_volumes.insert(SoundGroup::Voice.as_id(), 1.0);
+
         Ok(Self {
             sounds: HashMap::new(),
             active_sinks: Mutex::new(HashMap::new()),
             next_id: 0,
-            _stream: stream,
-            handle,
+            _stream: Some(stream),
+            mixer,
             streaming_threshold: threshold,
             master_volume: 1.0,
+            group_volumes,
         })
     }
 
@@ -106,25 +128,50 @@ impl RodioBackend {
         volume.clamp(0.0, 1.0)
     }
 
+    fn clamp_pan(pan: f32) -> f32 {
+        pan.clamp(-1.0, 1.0)
+    }
+
+    fn clamp_pitch(pitch: f32) -> f32 {
+        pitch.clamp(0.5, 2.0)
+    }
+
+    /// Calculate effective volume considering sound volume, group volume, and master volume
+    fn calculate_effective_volume(&self, sound: SoundId) -> f32 {
+        if let Some(entry) = self.sounds.get(&sound) {
+            let group_id = entry.group.as_id();
+            let group_vol = self.group_volumes.get(&group_id).copied().unwrap_or(1.0);
+            entry.volume * group_vol * self.master_volume
+        } else {
+            0.0
+        }
+    }
+
+    /// Try to create a sink
+    fn try_create_sink(&mut self) -> AudioResult<rodio::Sink> {
+        // Try to create sink connected to current mixer
+        let sink = rodio::Sink::connect_new(&self.mixer);
+        Ok(sink)
+    }
+
     fn apply_volume_to_sound_sinks(&self, sound: SoundId) {
+        let effective_volume = self.calculate_effective_volume(sound);
         if let Ok(mut sinks_by_sound) = self.active_sinks.lock()
-            && let (Some(entry), Some(sinks)) =
-                (self.sounds.get(&sound), sinks_by_sound.get_mut(&sound))
+            && let Some(sinks) = sinks_by_sound.get_mut(&sound)
         {
-            let target_volume = entry.volume * self.master_volume;
             for sink in sinks.iter_mut() {
-                sink.set_volume(target_volume);
+                sink.set_volume(effective_volume);
             }
         }
     }
 
     fn reapply_all_volumes(&self) {
         if let Ok(mut sinks_by_sound) = self.active_sinks.lock() {
-            for (sound_id, sinks) in sinks_by_sound.iter_mut() {
-                if let Some(entry) = self.sounds.get(sound_id) {
-                    let target_volume = entry.volume * self.master_volume;
+            for sound_id in sinks_by_sound.keys().copied().collect::<Vec<_>>() {
+                let effective_volume = self.calculate_effective_volume(sound_id);
+                if let Some(sinks) = sinks_by_sound.get_mut(&sound_id) {
                     for sink in sinks.iter_mut() {
-                        sink.set_volume(target_volume);
+                        sink.set_volume(effective_volume);
                     }
                 }
             }
@@ -137,7 +184,7 @@ impl AudioBackend for RodioBackend {
         let normalized_path = Self::normalize_path(path)?;
         let effective_strategy = self.choose_strategy(&normalized_path, strategy)?;
 
-        let id = SoundId::new(self.next_id);
+        let id = SoundId::new();
         let entry = match effective_strategy {
             LoadStrategy::Auto => unreachable!("auto strategy must be resolved before loading"),
             LoadStrategy::Buffered => {
@@ -156,6 +203,9 @@ impl AudioBackend for RodioBackend {
                     data: AudioData::Buffered(Arc::new(source)),
                     duration,
                     volume: 1.0,
+                    pan: 0.0,
+                    pitch: 1.0,
+                    group: SoundGroup::Sfx,
                 }
             }
             LoadStrategy::Streaming => {
@@ -180,6 +230,9 @@ impl AudioBackend for RodioBackend {
                     }),
                     duration,
                     volume: 1.0,
+                    pan: 0.0,
+                    pitch: 1.0,
+                    group: SoundGroup::Sfx,
                 }
             }
         };
@@ -192,13 +245,23 @@ impl AudioBackend for RodioBackend {
     fn play(&mut self, sound: SoundId) -> AudioResult<()> {
         self.prune_finished_sinks();
 
-        let entry = self
+        let entry_volume = self
             .sounds
             .get(&sound)
-            .ok_or(AudioError::SoundNotLoaded(sound))?;
-        let sink = rodio::Sink::try_new(&self.handle).map_err(AudioError::SinkCreation)?;
-        sink.set_volume(entry.volume * self.master_volume);
+            .ok_or(AudioError::SoundNotLoaded(sound))?
+            .volume;
 
+        // Try to create sink with device recovery if needed
+        let sink = match self.try_create_sink() {
+            Ok(sink) => sink,
+            Err(e) => {
+                log::error!("Failed to create audio sink: {}", e);
+                return Err(e);
+            }
+        };
+        sink.set_volume(entry_volume * self.master_volume);
+
+        let entry = &self.sounds[&sound];
         match &entry.data {
             AudioData::Buffered(buffered) => {
                 sink.append(buffered.as_ref().clone());
@@ -334,5 +397,81 @@ impl AudioBackend for RodioBackend {
     fn unload_all(&mut self) {
         self.stop_all();
         self.sounds.clear();
+    }
+
+    fn set_pan(&mut self, sound: SoundId, pan: f32) -> AudioResult<()> {
+        let clamped = Self::clamp_pan(pan);
+        let entry = self
+            .sounds
+            .get_mut(&sound)
+            .ok_or(AudioError::SoundNotLoaded(sound))?;
+        entry.pan = clamped;
+        // Note: Rodio doesn't support panning directly on sinks,
+        // this would require a custom source that applies panning
+        Ok(())
+    }
+
+    fn set_pitch(&mut self, sound: SoundId, pitch: f32) -> AudioResult<()> {
+        let clamped = Self::clamp_pitch(pitch);
+        let entry = self
+            .sounds
+            .get_mut(&sound)
+            .ok_or(AudioError::SoundNotLoaded(sound))?;
+        entry.pitch = clamped;
+        // Note: Rodio doesn't support pitch shifting directly,
+        // this would require a resampling source
+        Ok(())
+    }
+
+    fn set_group(&mut self, sound: SoundId, group: SoundGroup) -> AudioResult<()> {
+        let entry = self
+            .sounds
+            .get_mut(&sound)
+            .ok_or(AudioError::SoundNotLoaded(sound))?;
+        entry.group = group;
+        // Reapply volume with new group
+        self.apply_volume_to_sound_sinks(sound);
+        Ok(())
+    }
+
+    fn set_group_volume(&mut self, group: SoundGroup, volume: f32) -> AudioResult<()> {
+        let clamped = Self::clamp_volume(volume);
+        let group_id = group.as_id();
+        self.group_volumes.insert(group_id, clamped);
+        // Reapply all volumes to affected sinks
+        self.reapply_all_volumes();
+        Ok(())
+    }
+
+    fn get_pan(&self, sound: SoundId) -> Option<f32> {
+        self.sounds.get(&sound).map(|entry| entry.pan)
+    }
+
+    fn get_pitch(&self, sound: SoundId) -> Option<f32> {
+        self.sounds.get(&sound).map(|entry| entry.pitch)
+    }
+
+    fn get_group(&self, sound: SoundId) -> Option<SoundGroup> {
+        self.sounds.get(&sound).map(|entry| entry.group)
+    }
+
+    fn get_group_volume(&self, group: SoundGroup) -> Option<f32> {
+        self.group_volumes.get(&group.as_id()).copied()
+    }
+}
+
+// Custom Drop implementation to handle cleanup gracefully
+impl Drop for RodioBackend {
+    fn drop(&mut self) {
+        // Clear active sinks before dropping the stream
+        if let Ok(mut sinks) = self.active_sinks.lock() {
+            sinks.clear();
+        }
+        // Take ownership of the stream and forget it to prevent error messages
+        // during shutdown when the audio device may no longer be available
+        if let Some(stream) = self._stream.take() {
+            std::mem::forget(stream);
+        }
+        log::debug!("Audio backend shut down");
     }
 }

@@ -1,15 +1,16 @@
 use crate::audio::{AudioError, AudioSystem, RodioBackend};
-use crate::backend::backend::{BackendError, BackendResult, WindowBackend};
+use crate::backend::window_backend::{BackendError, BackendResult, WindowBackend};
+use crate::core::assets::AssetManager;
 use crate::core::engine_state::EngineState;
-use crate::core::event_handler::EventHandler;
-use crate::core::event_handler::EventHandlerApi;
+use crate::core::events::EventHandler;
+use crate::core::events::EventHandlerApi;
 use crate::core::events::{
     AxisMotionEvent, GestureEvent, ImeEvent, KeyEvent, Modifiers, MouseButtonEvent,
     MouseWheelDelta, PanEvent, Position, Size, Theme, Touch, TouchpadPressureEvent,
 };
-use crate::core::render_context::RenderContext;
-use crate::core::surface_provider::SurfaceProvider;
-use crate::core::window_config::WindowConfig;
+use crate::render::context::RenderContext;
+use crate::backend::surface_provider::SurfaceProvider;
+use crate::backend::window::WindowConfig;
 use crate::render::Renderer;
 use std::path::Path;
 
@@ -17,6 +18,7 @@ pub struct Engine {
     pub events: EventHandler,
     pub state: EngineState,
     pub audio: AudioSystem,
+    pub assets: AssetManager,
     backend: Box<dyn WindowBackend>,
     renderer: Box<dyn Renderer>,
 
@@ -35,6 +37,7 @@ impl Engine {
             events: EventHandler::new(),
             state: EngineState::new(),
             audio,
+            assets: AssetManager::new(),
             backend,
             renderer,
             window_size: (1, 1),
@@ -60,12 +63,19 @@ impl Engine {
             state: &'a mut EngineState,
             window_size: &'a mut (u32, u32),
             window_config: Option<&'a WindowConfig>,
+            assets: &'a AssetManager,
         }
 
         impl<'a> EventHandlerApi for Forwarder<'a> {
             fn on_surface_ready(&mut self, surface: &dyn SurfaceProvider) {
                 if !self.initialized {
                     let _ = self.renderer.init(surface, self.window_config);
+                    // Upload any images that were loaded before the surface was ready.
+                    for (id, image) in self.assets.iter_images() {
+                        let _ =
+                            self.renderer
+                                .upload_image(id, image.width, image.height, &image.data);
+                    }
                     self.initialized = true;
                 }
             }
@@ -209,6 +219,9 @@ impl Engine {
                 if !ctx.vertices.is_empty() {
                     self.renderer.submit(&ctx.vertices);
                 }
+                if !ctx.sprites.is_empty() {
+                    self.renderer.draw_sprites(&ctx.sprites, *self.window_size);
+                }
                 if self.initialized {
                     let _ = self.renderer.present();
                 }
@@ -222,6 +235,7 @@ impl Engine {
             state: &mut self.state,
             window_size: &mut self.window_size,
             window_config: self.window_config.as_ref(),
+            assets: &self.assets,
         };
 
         self.backend.run(&mut forwarder)

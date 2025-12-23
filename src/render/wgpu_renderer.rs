@@ -1,8 +1,12 @@
-use crate::core::surface_provider::SurfaceProvider;
-use crate::core::vertex::Vertex as CoreVertex;
-use crate::core::window_config::WindowConfig;
+use crate::backend::surface_provider::SurfaceProvider;
+use crate::backend::window::WindowConfig;
+use crate::core::assets::ImageId;
+use crate::graphics::Sprite;
+use crate::math::vec2::Vec2;
+use crate::render::Vertex as CoreVertex;
 use crate::render::renderer::{RenderError, RenderResult, Renderer};
 use raw_window_handle::{DisplayHandle, WindowHandle};
+use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 
 pub struct WgpuRenderer {
@@ -17,6 +21,11 @@ pub struct WgpuRenderer {
     pipeline: Option<wgpu::RenderPipeline>,
     vertex_buffer_layout: wgpu::VertexBufferLayout<'static>,
     pending_vertices: Vec<VertexGPU>,
+    sprite_pipeline: Option<wgpu::RenderPipeline>,
+    sprite_vertex_buffer_layout: wgpu::VertexBufferLayout<'static>,
+    sprite_bind_group_layout: Option<wgpu::BindGroupLayout>,
+    textures: HashMap<ImageId, TextureGpu>,
+    sprite_draws: Vec<SpriteDraw>,
 }
 
 impl WgpuRenderer {
@@ -33,6 +42,11 @@ impl WgpuRenderer {
             pipeline: None,
             vertex_buffer_layout: VertexGPU::buffer_layout(),
             pending_vertices: Vec::new(),
+            sprite_pipeline: None,
+            sprite_vertex_buffer_layout: SpriteVertexGPU::buffer_layout(),
+            sprite_bind_group_layout: None,
+            textures: HashMap::new(),
+            sprite_draws: Vec::new(),
         }
     }
 
@@ -78,6 +92,50 @@ impl VertexGPU {
     }
 }
 
+struct TextureGpu {
+    view: wgpu::TextureView,
+    sampler: wgpu::Sampler,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct SpriteVertexGPU {
+    pos: [f32; 2],
+    uv: [f32; 2],
+    color: [f32; 4],
+}
+
+impl SpriteVertexGPU {
+    fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<SpriteVertexGPU>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x2,
+                    offset: 0,
+                    shader_location: 0,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x2,
+                    offset: 8,
+                    shader_location: 1,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x4,
+                    offset: 16,
+                    shader_location: 2,
+                },
+            ],
+        }
+    }
+}
+
+struct SpriteDraw {
+    texture_id: ImageId,
+    vertices: [SpriteVertexGPU; 6],
+}
+
 impl Renderer for WgpuRenderer {
     fn init(
         &mut self,
@@ -91,21 +149,25 @@ impl Renderer for WgpuRenderer {
             ..Default::default()
         });
 
-        let wh: WindowHandle = surface_provider.window_handle().map_err(|_| RenderError)?;
-        let dh: DisplayHandle = surface_provider.display_handle().map_err(|_| RenderError)?;
+        let wh: WindowHandle = surface_provider
+            .window_handle()
+            .map_err(|e| RenderError::InitFailed(format!("window_handle failed: {}", e)))?;
+        let dh: DisplayHandle = surface_provider
+            .display_handle()
+            .map_err(|e| RenderError::InitFailed(format!("display_handle failed: {}", e)))?;
         let unsafe_target = wgpu::SurfaceTargetUnsafe::RawHandle {
             raw_window_handle: wh.as_raw(),
             raw_display_handle: dh.as_raw(),
         };
-        let surface =
-            unsafe { instance.create_surface_unsafe(unsafe_target) }.map_err(|_| RenderError)?;
+        let surface = unsafe { instance.create_surface_unsafe(unsafe_target) }
+            .map_err(|e| RenderError::SurfaceError(format!("create_surface failed: {}", e)))?;
 
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
             force_fallback_adapter: false,
             compatible_surface: Some(&surface),
         }))
-        .map_err(|_| RenderError)?;
+        .map_err(|e| RenderError::InitFailed(format!("no compatible adapter found: {}", e)))?;
 
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             required_features: wgpu::Features::empty(),
@@ -115,7 +177,7 @@ impl Renderer for WgpuRenderer {
             experimental_features: wgpu::ExperimentalFeatures::default(),
             memory_hints: wgpu::MemoryHints::default(),
         }))
-        .map_err(|_| RenderError)?;
+        .map_err(|e| RenderError::InitFailed(format!("request_device failed: {}", e)))?;
 
         let caps = surface.get_capabilities(&adapter);
         let vsync_enabled = config.and_then(|cfg| cfg.vsync).unwrap_or(false);
@@ -231,6 +293,107 @@ impl Renderer for WgpuRenderer {
             multiview: None,
         });
 
+        // Sprite pipeline (textured quads)
+        let sprite_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("sprite bind group layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        let sprite_shader_src = r#"
+            struct SpriteVsIn {
+                @location(0) pos: vec2<f32>,
+                @location(1) uv: vec2<f32>,
+                @location(2) color: vec4<f32>,
+            };
+
+            struct SpriteVsOut {
+                @builtin(position) pos: vec4<f32>,
+                @location(0) uv: vec2<f32>,
+                @location(1) color: vec4<f32>,
+            };
+
+            @group(0) @binding(0) var sprite_tex: texture_2d<f32>;
+            @group(0) @binding(1) var sprite_sampler: sampler;
+
+            @vertex
+            fn vs_main(input: SpriteVsIn) -> SpriteVsOut {
+                var out: SpriteVsOut;
+                out.pos = vec4<f32>(input.pos, 0.0, 1.0);
+                out.uv = input.uv;
+                out.color = input.color;
+                return out;
+            }
+
+            @fragment
+            fn fs_main(input: SpriteVsOut) -> @location(0) vec4<f32> {
+                let tex_color = textureSample(sprite_tex, sprite_sampler, input.uv);
+                return tex_color * input.color;
+            }
+        "#;
+        let sprite_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("sprite shader"),
+            source: wgpu::ShaderSource::Wgsl(sprite_shader_src.into()),
+        });
+
+        let sprite_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("sprite pipeline layout"),
+                bind_group_layouts: &[&sprite_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let sprite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("sprite pipeline"),
+            layout: Some(&sprite_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &sprite_shader,
+                entry_point: Some("vs_main"),
+                buffers: std::slice::from_ref(&self.sprite_vertex_buffer_layout),
+                compilation_options: Default::default(),
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &sprite_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            cache: None,
+            multiview: None,
+        });
+
         self.instance = Some(instance);
         self.surface = Some(surface);
         self.adapter = Some(adapter);
@@ -238,6 +401,8 @@ impl Renderer for WgpuRenderer {
         self.queue = Some(queue);
         self.config = Some(config);
         self.pipeline = Some(pipeline);
+        self.sprite_bind_group_layout = Some(sprite_bind_group_layout);
+        self.sprite_pipeline = Some(sprite_pipeline);
 
         Ok(())
     }
@@ -265,9 +430,14 @@ impl Renderer for WgpuRenderer {
             Ok(frame) => frame,
             Err(wgpu::SurfaceError::Lost) => {
                 surface.configure(device, config);
-                surface.get_current_texture().map_err(|_| RenderError)?
+                surface.get_current_texture().map_err(|e| {
+                    RenderError::SurfaceError(format!("get_current_texture after Lost: {}", e))
+                })?
             }
-            Err(wgpu::SurfaceError::OutOfMemory) => return Err(RenderError),
+            Err(wgpu::SurfaceError::OutOfMemory) => {
+                log::error!("GPU memory exhausted in present");
+                return Err(RenderError::OutOfMemory);
+            }
             Err(_) => return Ok(()),
         };
         let view = frame
@@ -304,11 +474,47 @@ impl Renderer for WgpuRenderer {
             rpass.set_vertex_buffer(0, vb.slice(..));
             rpass.draw(0..(self.pending_vertices.len() as u32), 0..1);
         }
+
+        if !self.sprite_draws.is_empty() {
+            let sprite_pipeline = self.sprite_pipeline.as_ref().unwrap();
+            let bind_group_layout = self.sprite_bind_group_layout.as_ref().unwrap();
+            rpass.set_pipeline(sprite_pipeline);
+
+            for draw in &self.sprite_draws {
+                if let Some(texture) = self.textures.get(&draw.texture_id) {
+                    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("sprite bind group"),
+                        layout: bind_group_layout,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: wgpu::BindingResource::TextureView(&texture.view),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                            },
+                        ],
+                    });
+
+                    let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("sprite vb"),
+                        contents: bytemuck::cast_slice(&draw.vertices),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    });
+
+                    rpass.set_bind_group(0, &bind_group, &[]);
+                    rpass.set_vertex_buffer(0, vb.slice(..));
+                    rpass.draw(0..6, 0..1);
+                }
+            }
+        }
         drop(rpass);
 
         queue.submit(std::iter::once(encoder.finish()));
         frame.present();
         self.pending_vertices.clear();
+        self.sprite_draws.clear();
         Ok(())
     }
     fn submit(&mut self, vertices: &[CoreVertex]) {
@@ -326,5 +532,126 @@ impl Renderer for WgpuRenderer {
             b: rgba[2] as f64,
             a: rgba[3] as f64,
         };
+    }
+
+    fn upload_image(
+        &mut self,
+        id: ImageId,
+        width: u32,
+        height: u32,
+        data: &[u8],
+    ) -> RenderResult<()> {
+        let device = self.device();
+        let queue = self.queue();
+
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("sprite texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * width),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("sprite sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        self.textures.insert(id, TextureGpu { view, sampler });
+
+        Ok(())
+    }
+
+    fn draw_sprites(&mut self, sprites: &[Sprite], viewport_size: (u32, u32)) {
+        let (w, h) = (viewport_size.0.max(1) as f32, viewport_size.1.max(1) as f32);
+
+        for sprite in sprites {
+            if !self.textures.contains_key(&sprite.image_id) {
+                continue;
+            }
+
+            let corners = sprite.world_corners();
+
+            let to_ndc = |p: Vec2| -> [f32; 2] { [(p.x / w) * 2.0 - 1.0, 1.0 - (p.y / h) * 2.0] };
+
+            let tl = to_ndc(corners[0]);
+            let tr = to_ndc(corners[1]);
+            let br = to_ndc(corners[2]);
+            let bl = to_ndc(corners[3]);
+
+            let color: [f32; 4] = sprite.tint.to_linear_rgba();
+
+            let vertices = [
+                SpriteVertexGPU {
+                    pos: tl,
+                    uv: [0.0, 0.0],
+                    color,
+                },
+                SpriteVertexGPU {
+                    pos: tr,
+                    uv: [1.0, 0.0],
+                    color,
+                },
+                SpriteVertexGPU {
+                    pos: br,
+                    uv: [1.0, 1.0],
+                    color,
+                },
+                SpriteVertexGPU {
+                    pos: tl,
+                    uv: [0.0, 0.0],
+                    color,
+                },
+                SpriteVertexGPU {
+                    pos: br,
+                    uv: [1.0, 1.0],
+                    color,
+                },
+                SpriteVertexGPU {
+                    pos: bl,
+                    uv: [0.0, 1.0],
+                    color,
+                },
+            ];
+
+            self.sprite_draws.push(SpriteDraw {
+                texture_id: sprite.image_id,
+                vertices,
+            });
+        }
     }
 }

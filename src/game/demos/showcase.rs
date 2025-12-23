@@ -5,12 +5,12 @@ use std::rc::Rc;
 use log::{info, warn};
 
 use crate::audio::{AudioResult, AudioSystem};
-use crate::core::color::Color;
 use crate::core::engine::Engine;
 use crate::core::engine_state::EngineState;
 use crate::core::events::Position;
-use crate::core::render_context::RenderContext;
+use crate::math::Color;
 use crate::math::vec2::Vec2;
+use crate::render::context::RenderContext;
 use crate::render::shapes::Polygon;
 use crate::render::{
     Circle, Collider, Drawable, Ellipse, Line, Polyline, Rectangle, Transform2d, Triangle,
@@ -102,6 +102,7 @@ struct Scene {
     line: Line,
     polyline: Polyline,
     hovered: Vec<ShapeId>,
+    cursor: Vec2,
     time: f32,
 }
 
@@ -188,6 +189,7 @@ impl Scene {
             line,
             polyline,
             hovered: Vec::new(),
+            cursor: Vec2::new(0.0, 0.0),
             time: 0.0,
         };
         scene.log_intersections();
@@ -206,6 +208,9 @@ impl Scene {
 
         let pulsate = 1.0 + 0.05 * (self.time * 2.0).sin();
         self.circle.set_scale(Vec2::new(pulsate, pulsate));
+
+        // Update collision detection every frame
+        self.handle_pointer(self.cursor);
     }
 
     fn render(&self, ctx: &mut RenderContext) {
@@ -216,9 +221,18 @@ impl Scene {
         self.line.draw(ctx);
         self.polyline.draw(ctx);
         self.rectangle.draw(ctx);
+
+        // Display visual indicators for hovered shapes
+        for (i, _id) in self.hovered.iter().enumerate() {
+            let mut indicator =
+                Circle::new(Vec2::new(20.0 + i as f32 * 35.0, 20.0), 12.0, Color::WHITE);
+            indicator.set_origin_center_keep_position();
+            indicator.draw(ctx);
+        }
     }
 
     fn handle_pointer(&mut self, cursor: Vec2) {
+        self.cursor = cursor;
         let mut hits = Vec::new();
         if self.rectangle.contains_point(cursor) {
             hits.push(ShapeId::Rectangle);

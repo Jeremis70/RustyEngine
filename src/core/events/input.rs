@@ -1,4 +1,4 @@
-use crate::core::events::{Key, Modifiers, MouseButton, Position};
+use super::events::{Key, Modifiers, MouseButton, Position};
 use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
@@ -30,6 +30,33 @@ impl Input {
             mouse_position: Position { x: 0.0, y: 0.0 },
             mouse_delta: (0.0, 0.0),
         }
+    }
+
+    // === FRAME STATE MANAGEMENT ===
+
+    /// Called at START of each frame - clears one-frame states
+    pub fn frame_reset(&mut self) {
+        self.clear_frame_state();
+    }
+
+    /// Check if key is held DOWN (including this frame)
+    pub fn is_key_held(&self, key: Key) -> bool {
+        self.pressed_keys.contains(&key)
+    }
+
+    /// Check if key was PRESSED this frame only
+    pub fn is_key_pressed(&self, key: Key) -> bool {
+        self.just_pressed_keys.contains(&key)
+    }
+
+    /// Check if key was RELEASED this frame only
+    pub fn is_key_released(&self, key: Key) -> bool {
+        self.just_released_keys.contains(&key)
+    }
+
+    /// Check if ANY key pressed this frame
+    pub fn any_key_pressed(&self) -> bool {
+        !self.just_pressed_keys.is_empty()
     }
 
     // === KEYBOARD POLLING ===

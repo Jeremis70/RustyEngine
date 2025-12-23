@@ -1,9 +1,9 @@
 use log::info;
 
-use crate::core::color::Color;
+use crate::math::Color;
 use crate::core::engine::Engine;
 use crate::core::engine_state::EngineState;
-use crate::core::render_context::RenderContext;
+use crate::render::context::RenderContext;
 
 /// Minimal scaffold that illustrates where to plug update and render code.
 pub fn install(engine: &mut Engine) {

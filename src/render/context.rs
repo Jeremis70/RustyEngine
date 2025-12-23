@@ -1,6 +1,6 @@
-use crate::core::color::Color;
-use crate::core::sprite::Sprite;
-use crate::core::vertex::Vertex;
+use crate::graphics::Sprite;
+use crate::math::color::Color;
+use crate::render::Vertex;
 use crate::math::vec2::Vec2;
 
 /// CPU-side draw list. Collects vertices and clear color; no renderer coupling.

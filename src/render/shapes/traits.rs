@@ -1,4 +1,4 @@
-use crate::core::render_context::RenderContext;
+use crate::render::context::RenderContext;
 use crate::math::vec2::Vec2;
 
 use super::{ShapeRef, shapes_intersect};
