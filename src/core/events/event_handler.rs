@@ -1,5 +1,5 @@
 use super::callbacks::{Callbacks, CallbacksMut};
-use super::events::{
+use super::input_events::{
     AxisMotionEvent, GestureEvent, ImeEvent, Key, KeyEvent, Modifiers, MouseButtonEvent,
     MouseWheelDelta, PanEvent, Position, Size, Theme, Touch, TouchpadPressureEvent,
 };

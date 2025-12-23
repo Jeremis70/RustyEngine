@@ -1,4 +1,4 @@
-use super::events::{Key, Modifiers, MouseButton, Position};
+use super::input_events::{Key, Modifiers, MouseButton, Position};
 use std::collections::HashSet;
 
 #[derive(Debug, Clone)]

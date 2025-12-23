@@ -2,7 +2,7 @@ use crate::core::assets::ImageAsset;
 use crate::core::assets::ImageId;
 use crate::math::color::Color;
 use crate::math::vec2::Vec2;
-use crate::render::Transform2d;
+use crate::render::{Drawable, RenderContext, Transform2d};
 
 /// Simple 2D sprite similar to pygame's Sprite.
 /// Holds a reference id to a texture and basic transform properties.
@@ -86,5 +86,11 @@ impl Transform2d for Sprite {
 
     fn origin_mut(&mut self) -> &mut Vec2 {
         &mut self.origin
+    }
+}
+
+impl Drawable for Sprite {
+    fn draw(&self, ctx: &mut RenderContext) {
+        ctx.draw_sprite(self);
     }
 }

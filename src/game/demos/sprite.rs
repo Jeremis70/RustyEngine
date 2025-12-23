@@ -1,11 +1,12 @@
 use log::info;
 
-use crate::math::color::Color;
 use crate::core::engine::Engine;
 use crate::core::engine_state::EngineState;
-use crate::render::context::RenderContext;
 use crate::graphics::Sprite;
+use crate::math::color::Color;
 use crate::math::vec2::Vec2;
+use crate::render::Drawable;
+use crate::render::context::RenderContext;
 
 /// Simple demo that loads an image via the asset manager and displays it as a sprite.
 pub fn install(engine: &mut Engine) {
@@ -13,9 +14,10 @@ pub fn install(engine: &mut Engine) {
 
     // Load an image from disk (PNG/JPEG/BMP are supported by the image crate).
     // If the file is missing or invalid, the demo will just show a black screen.
-    match engine.assets.load_image(
-        r#"D:\Code\Rust\RustyEngine\src\game\assets\Player Idle 48x48.png"#,
-    ) {
+    match engine
+        .assets
+        .load_image(r#"D:\Code\Rust\RustyEngine\src\game\assets\Player Idle 48x48.png"#)
+    {
         Ok(image_id) => {
             match engine.assets.get_image(image_id) {
                 Some(image) => {
@@ -29,7 +31,7 @@ pub fn install(engine: &mut Engine) {
 
                     engine.events.on_render(move |ctx: &mut RenderContext| {
                         ctx.clear(Color::BLACK);
-                        ctx.draw_sprite(&sprite);
+                        sprite.draw(ctx);
                     });
                 }
                 None => {
