@@ -1,8 +1,8 @@
-use crate::math::color::Color;
 use crate::math::Transform;
-use crate::render::context::RenderContext;
-use crate::render::Vertex;
+use crate::math::color::Color;
 use crate::math::vec2::Vec2;
+use crate::render::Vertex;
+use crate::render::context::RenderContext;
 
 use super::{Collider, Drawable, ShapeRef, Transform2d};
 

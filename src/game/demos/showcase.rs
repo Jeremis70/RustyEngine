@@ -12,9 +12,7 @@ use crate::math::Color;
 use crate::math::vec2::Vec2;
 use crate::render::context::RenderContext;
 use crate::render::shapes::Polygon;
-use crate::render::{
-    Circle, Collider, Drawable, Ellipse, Line, Polyline, Rectangle, Triangle,
-};
+use crate::render::{Circle, Collider, Drawable, Ellipse, Line, Polyline, Rectangle, Triangle};
 
 const MUSIC_TRACK: &str =
     r#"D:\Code\Rust\RustyEngine\src\game\audio\toby fox - UNDERTALE Soundtrack - 17 Snowy.flac"#;

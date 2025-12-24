@@ -1,12 +1,12 @@
 use super::callbacks::{Callbacks, CallbacksMut};
+use super::input::Input;
 use super::input_events::{
     AxisMotionEvent, GestureEvent, ImeEvent, Key, KeyEvent, Modifiers, MouseButtonEvent,
     MouseWheelDelta, PanEvent, Position, Size, Theme, Touch, TouchpadPressureEvent,
 };
-use super::input::Input;
+use crate::backend::surface_provider::SurfaceProvider;
 use crate::core::engine_state::EngineState;
 use crate::render::context::RenderContext;
-use crate::backend::surface_provider::SurfaceProvider;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 

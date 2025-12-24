@@ -1,8 +1,8 @@
 use log::info;
 
-use crate::math::Color;
 use crate::core::engine::Engine;
 use crate::core::engine_state::EngineState;
+use crate::math::Color;
 use crate::render::context::RenderContext;
 
 /// Minimal scaffold that illustrates where to plug update and render code.

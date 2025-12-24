@@ -30,7 +30,9 @@ struct SoundEntry {
 
 impl Default for SoundEntry {
     fn default() -> Self {
-        panic!("SoundEntry::default() should not be used directly, as AudioData::Buffered requires a valid source");
+        panic!(
+            "SoundEntry::default() should not be used directly, as AudioData::Buffered requires a valid source"
+        );
     }
 }
 

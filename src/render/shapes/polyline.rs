@@ -1,8 +1,8 @@
-use crate::math::color::Color;
 use crate::math::Transform;
-use crate::render::context::RenderContext;
-use crate::render::Vertex;
+use crate::math::color::Color;
 use crate::math::vec2::Vec2;
+use crate::render::Vertex;
+use crate::render::context::RenderContext;
 
 use super::{Collider, Drawable, ShapeRef, Transform2d};
 
@@ -164,17 +164,11 @@ impl Polyline {
             let mut outline = Vec::with_capacity(points.len() * 2);
 
             for (p, offset) in points.iter().zip(&left) {
-                outline.push(self.transform.transform_point(
-                    *p + *offset,
-                    self.size,
-                ));
+                outline.push(self.transform.transform_point(*p + *offset, self.size));
             }
 
             for (p, offset) in points.iter().zip(&right).rev() {
-                outline.push(self.transform.transform_point(
-                    *p + *offset,
-                    self.size,
-                ));
+                outline.push(self.transform.transform_point(*p + *offset, self.size));
             }
 
             outline
@@ -195,10 +189,18 @@ impl Drawable for Polyline {
             let p0 = points[i];
             let p1 = points[i + 1];
 
-            let v0 = self.transform.transform_point(p0 + left_offsets[i], self.size);
-            let v1 = self.transform.transform_point(p1 + left_offsets[i + 1], self.size);
-            let v2 = self.transform.transform_point(p1 + right_offsets[i + 1], self.size);
-            let v3 = self.transform.transform_point(p0 + right_offsets[i], self.size);
+            let v0 = self
+                .transform
+                .transform_point(p0 + left_offsets[i], self.size);
+            let v1 = self
+                .transform
+                .transform_point(p1 + left_offsets[i + 1], self.size);
+            let v2 = self
+                .transform
+                .transform_point(p1 + right_offsets[i + 1], self.size);
+            let v3 = self
+                .transform
+                .transform_point(p0 + right_offsets[i], self.size);
 
             vertices.push(Vertex {
                 pos: ctx.to_ndc(v0).to_array(),

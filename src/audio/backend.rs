@@ -13,7 +13,7 @@ pub enum LoadStrategy {
 }
 
 /// Audio backend trait for abstraction over different audio implementations
-/// 
+///
 /// This trait defines the interface for audio playback, allowing implementations
 /// such as Rodio, FMOD, or Wwise to be swapped transparently.
 pub trait AudioBackend {
@@ -31,11 +31,11 @@ pub trait AudioBackend {
     fn unload_all(&mut self);
 
     /// Set the pan (left/right stereo positioning) for a sound
-    /// 
+    ///
     /// # Arguments
     /// * `sound` - The sound to adjust
     /// * `pan` - Pan value from -1.0 (full left) to 1.0 (full right), 0.0 is center
-    /// 
+    ///
     /// # Returns
     /// `Ok(())` if successful, `AudioError` otherwise
     fn set_pan(&mut self, sound: SoundId, pan: f32) -> AudioResult<()> {
@@ -45,11 +45,11 @@ pub trait AudioBackend {
     }
 
     /// Set the pitch/playback speed for a sound
-    /// 
+    ///
     /// # Arguments
     /// * `sound` - The sound to adjust
     /// * `pitch` - Pitch multiplier (0.5 = half speed, 2.0 = double speed)
-    /// 
+    ///
     /// # Returns
     /// `Ok(())` if successful, `AudioError` otherwise
     fn set_pitch(&mut self, sound: SoundId, pitch: f32) -> AudioResult<()> {
@@ -59,11 +59,11 @@ pub trait AudioBackend {
     }
 
     /// Assign a sound to a specific group
-    /// 
+    ///
     /// # Arguments
     /// * `sound` - The sound to assign
     /// * `group` - The group to assign to
-    /// 
+    ///
     /// # Returns
     /// `Ok(())` if successful, `AudioError` otherwise
     fn set_group(&mut self, sound: SoundId, group: SoundGroup) -> AudioResult<()> {
@@ -73,11 +73,11 @@ pub trait AudioBackend {
     }
 
     /// Set the volume for all sounds in a specific group
-    /// 
+    ///
     /// # Arguments
     /// * `group` - The group to adjust
     /// * `volume` - Volume level from 0.0 (silent) to 1.0 (full)
-    /// 
+    ///
     /// # Returns
     /// `Ok(())` if successful, `AudioError` otherwise
     fn set_group_volume(&mut self, group: SoundGroup, volume: f32) -> AudioResult<()> {

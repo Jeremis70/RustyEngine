@@ -1,5 +1,5 @@
-use crate::render::context::RenderContext;
 use crate::math::vec2::Vec2;
+use crate::render::context::RenderContext;
 
 use super::{ShapeRef, shapes_intersect};
 

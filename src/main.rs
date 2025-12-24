@@ -8,9 +8,9 @@ mod graphics;
 mod math;
 mod render;
 
+use crate::backend::window::WindowConfig;
 use crate::backend::winit_backend::WinitBackend;
 use crate::core::engine::Engine;
-use crate::backend::window::WindowConfig;
 use crate::render::WgpuRenderer;
 use log::error;
 

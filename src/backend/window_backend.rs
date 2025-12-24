@@ -25,14 +25,8 @@ pub type BackendResult<T> = Result<T, BackendError>;
 
 /// Backend trait abstracts platform windowing and event loop.
 pub trait WindowBackend {
-    fn create_window(
-        &mut self,
-        config: crate::backend::window::WindowConfig,
-    ) -> BackendResult<()>;
-    fn run(
-        &mut self,
-        handler: &mut dyn crate::core::events::EventHandlerApi,
-    ) -> BackendResult<()>;
+    fn create_window(&mut self, config: crate::backend::window::WindowConfig) -> BackendResult<()>;
+    fn run(&mut self, handler: &mut dyn crate::core::events::EventHandlerApi) -> BackendResult<()>;
 
     /// Returns a surface provider if the window has been created.
     fn surface_provider(&self) -> Option<&dyn crate::backend::surface_provider::SurfaceProvider>;

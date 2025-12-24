@@ -1,4 +1,6 @@
 use crate::audio::{AudioError, AudioSystem, RodioBackend};
+use crate::backend::surface_provider::SurfaceProvider;
+use crate::backend::window::WindowConfig;
 use crate::backend::window_backend::{BackendError, BackendResult, WindowBackend};
 use crate::core::assets::AssetManager;
 use crate::core::engine_state::EngineState;
@@ -8,10 +10,8 @@ use crate::core::events::{
     AxisMotionEvent, GestureEvent, ImeEvent, KeyEvent, Modifiers, MouseButtonEvent,
     MouseWheelDelta, PanEvent, Position, Size, Theme, Touch, TouchpadPressureEvent,
 };
-use crate::render::context::RenderContext;
-use crate::backend::surface_provider::SurfaceProvider;
-use crate::backend::window::WindowConfig;
 use crate::render::Renderer;
+use crate::render::context::RenderContext;
 use std::path::Path;
 
 pub struct Engine {
