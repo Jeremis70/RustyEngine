@@ -12,7 +12,7 @@
 		{
 			"label": "Build RustyEngine",
 			"type": "shell",
-			"command": "cargo run",
+			"command": "cargo build",
 			"args": [],
 			"isBackground": false,
 			"problemMatcher": [

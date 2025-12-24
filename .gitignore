@@ -1,3 +1,10 @@
 /target
 *.md
 !README.md
+
+# VSCode - exclude everything except specific files
+.vscode/*
+!.vscode/tasks.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
