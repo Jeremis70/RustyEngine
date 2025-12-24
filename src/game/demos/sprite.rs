@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use crate::core::assets::{SpriteOrder, SpritesheetConfig};
 use crate::core::engine::Engine;
 use crate::core::engine_state::EngineState;
-use crate::graphics::{AnimatedSprite, Animation, AnimationFrame, Sprite};
+use crate::graphics::{AnimatedSprite, Animation, Sprite};
 use crate::math::color::Color;
 use crate::math::vec2::Vec2;
 use crate::render::Drawable;
@@ -44,16 +44,7 @@ pub fn install(engine: &mut Engine) {
     let sprite = Rc::new(RefCell::new(sprite));
 
     // --- Create AnimatedSprite (new method) ---
-    let animation = Animation {
-        frames: sprite_ids
-            .iter()
-            .map(|&id| AnimationFrame {
-                image_id: id,
-                duration: Duration::from_millis(100),
-            })
-            .collect(),
-        looped: true,
-    };
+    let animation = Animation::looping(&sprite_ids, Duration::from_millis(100));
 
     let mut animated_sprite = AnimatedSprite::new(animation, 48, 48);
     animated_sprite.position = Vec2::new(450.0, 200.0);
