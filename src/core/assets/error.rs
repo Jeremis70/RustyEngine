@@ -21,4 +21,7 @@ pub enum AssetError {
     },
     #[error("Asset memory limit exceeded: {current} / {limit} bytes")]
     MemoryExceeded { current: usize, limit: usize },
+
+    #[error("Invalid Spritesheet format in asset {path:?}: {reason}")]
+    InvalidSpritesheet { path: PathBuf, reason: String },
 }

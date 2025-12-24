@@ -2,7 +2,7 @@ use crate::core::assets::ImageAsset;
 use crate::core::assets::ImageId;
 use crate::math::color::Color;
 use crate::math::vec2::Vec2;
-use crate::render::{Drawable, RenderContext, Transform2d};
+use crate::render::{Drawable, RenderContext, SpriteDrawData, Transform2d};
 
 /// Simple 2D sprite similar to pygame's Sprite.
 /// Holds a reference id to a texture and basic transform properties.
@@ -53,6 +53,19 @@ impl Sprite {
         let bl = self.transform_point(Vec2::new(0.0, size.y), size);
         [tl, tr, br, bl]
     }
+
+    /// Convert this sprite to draw data for rendering.
+    pub fn to_draw_data(&self) -> SpriteDrawData {
+        SpriteDrawData {
+            image_id: self.image_id,
+            size: self.size,
+            position: self.position,
+            rotation: self.rotation,
+            scale: self.scale,
+            origin: self.origin,
+            tint: self.tint,
+        }
+    }
 }
 
 impl Transform2d for Sprite {
@@ -91,6 +104,26 @@ impl Transform2d for Sprite {
 
 impl Drawable for Sprite {
     fn draw(&self, ctx: &mut RenderContext) {
-        ctx.draw_sprite(self);
+        ctx.draw_sprite(self.to_draw_data());
+    }
+}
+
+impl From<&Sprite> for SpriteDrawData {
+    fn from(sprite: &Sprite) -> Self {
+        sprite.to_draw_data()
+    }
+}
+
+impl From<Sprite> for SpriteDrawData {
+    fn from(sprite: Sprite) -> Self {
+        SpriteDrawData {
+            image_id: sprite.image_id,
+            size: sprite.size,
+            position: sprite.position,
+            rotation: sprite.rotation,
+            scale: sprite.scale,
+            origin: sprite.origin,
+            tint: sprite.tint,
+        }
     }
 }

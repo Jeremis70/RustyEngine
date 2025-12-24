@@ -1,52 +1,106 @@
 use log::info;
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
 
+use crate::core::assets::{SpriteOrder, SpritesheetConfig};
 use crate::core::engine::Engine;
 use crate::core::engine_state::EngineState;
-use crate::graphics::Sprite;
+use crate::graphics::{AnimatedSprite, Animation, AnimationFrame, Sprite};
 use crate::math::color::Color;
 use crate::math::vec2::Vec2;
 use crate::render::Drawable;
 use crate::render::context::RenderContext;
 
-/// Simple demo that loads an image via the asset manager and displays it as a sprite.
+/// Simple demo that loads a spritesheet and animates it.
 pub fn install(engine: &mut Engine) {
-    info!("Sprite demo loaded: image + sprite test.");
+    info!("Sprite demo loaded: animated spritesheet.");
 
-    // Load an image from disk (PNG/JPEG/BMP are supported by the image crate).
-    // If the file is missing or invalid, the demo will just show a black screen.
-    match engine
+    // --- Spritesheet config ---
+    let config = SpritesheetConfig {
+        columns: 10,
+        rows: 1,
+        sprite_width: 48,
+        sprite_height: 48,
+        order: SpriteOrder::LeftToRightTopToBottom,
+        spacing: 0,
+        margin: 0,
+    };
+
+    let sprite_ids = engine
         .assets
-        .load_image(r#"D:\Code\Rust\RustyEngine\src\game\assets\Player Idle 48x48.png"#)
+        .load_spritesheet(
+            r#"D:\Code\Rust\RustyEngine\src\game\assets\Player Idle 48x48.png"#,
+            config,
+        )
+        .unwrap();
+
+    // --- Create manual animated sprite (old method) ---
+    let image = engine.assets.get_image(sprite_ids[0]).unwrap();
+    let mut sprite = Sprite::from_image(sprite_ids[0], image);
+    sprite.position = Vec2::new(250.0, 200.0);
+
+    // --- Shared sprite state ---
+    let sprite = Rc::new(RefCell::new(sprite));
+
+    // --- Create AnimatedSprite (new method) ---
+    let animation = Animation {
+        frames: sprite_ids
+            .iter()
+            .map(|&id| AnimationFrame {
+                image_id: id,
+                duration: Duration::from_millis(100),
+            })
+            .collect(),
+        looped: true,
+    };
+
+    let mut animated_sprite = AnimatedSprite::new(animation, 48, 48);
+    animated_sprite.position = Vec2::new(450.0, 200.0);
+    let animated_sprite = Rc::new(RefCell::new(animated_sprite));
+
+    // --- Animation state ---
+    let mut current_frame: usize = 0;
+    let mut last_switch = Instant::now();
+    let frame_duration = Duration::from_millis(100);
+
+    // --- Update manual sprite ---
     {
-        Ok(image_id) => {
-            match engine.assets.get_image(image_id) {
-                Some(image) => {
-                    let mut sprite = Sprite::from_image(image_id, image);
-                    // Place the sprite roughly at the center of the default window (700x400 in main.rs).
-                    sprite.position = Vec2::new(350.0, 200.0);
+        let sprite = Rc::clone(&sprite);
+        let sprite_ids = sprite_ids.clone();
 
-                    engine.events.on_update(|_state: &EngineState| {
-                        // Game logic could update the sprite here (animation, movement, etc.).
-                    });
+        engine.events.on_update(move |_state: &EngineState| {
+            if last_switch.elapsed() >= frame_duration {
+                last_switch = Instant::now();
+                current_frame = (current_frame + 1) % sprite_ids.len();
 
-                    engine.events.on_render(move |ctx: &mut RenderContext| {
-                        ctx.clear(Color::BLACK);
-                        sprite.draw(ctx);
-                    });
-                }
-                None => {
-                    log::error!("Failed to retrieve loaded sprite image");
-                    engine.events.on_render(|ctx: &mut RenderContext| {
-                        ctx.clear(Color::BLACK);
-                    });
-                }
+                sprite.borrow_mut().image_id = sprite_ids[current_frame];
             }
-        }
-        Err(e) => {
-            log::error!("Failed to load sprite image: {}", e);
-            engine.events.on_render(|ctx: &mut RenderContext| {
-                ctx.clear(Color::BLACK);
-            });
-        }
+        });
+    }
+
+    // --- Update AnimatedSprite ---
+    {
+        let animated_sprite = Rc::clone(&animated_sprite);
+
+        engine.events.on_update(move |state: &EngineState| {
+            animated_sprite.borrow_mut().update(state.delta_time);
+        });
+    }
+
+    // --- Render ---
+    {
+        let sprite = Rc::clone(&sprite);
+        let animated_sprite = Rc::clone(&animated_sprite);
+
+        engine.events.on_render(move |ctx: &mut RenderContext| {
+            ctx.clear(Color::BLACK);
+
+            // Manual animation (left)
+            sprite.borrow().draw(ctx);
+
+            // AnimatedSprite (right)
+            animated_sprite.borrow().draw(ctx);
+        });
     }
 }

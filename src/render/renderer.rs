@@ -1,8 +1,7 @@
 use crate::backend::surface_provider::SurfaceProvider;
 use crate::backend::window::WindowConfig;
 use crate::core::assets::ImageId;
-use crate::graphics::Sprite;
-use crate::render::Vertex;
+use crate::render::{SpriteDrawData, Vertex};
 use thiserror::Error;
 
 pub type RenderResult<T> = Result<T, RenderError>;
@@ -57,5 +56,5 @@ pub trait Renderer {
     }
 
     /// Draw a list of sprites for the current frame.
-    fn draw_sprites(&mut self, _sprites: &[Sprite], _viewport_size: (u32, u32)) {}
+    fn draw_sprites(&mut self, _sprites: &[SpriteDrawData], _viewport_size: (u32, u32)) {}
 }

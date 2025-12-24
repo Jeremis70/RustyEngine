@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Unique identifier for an image asset.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct ImageId(usize);
+pub struct ImageId(pub(crate) usize);
 
 impl ImageId {
     pub(crate) fn new() -> Self {

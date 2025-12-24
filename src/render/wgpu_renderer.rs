@@ -1,8 +1,8 @@
 use crate::backend::surface_provider::SurfaceProvider;
 use crate::backend::window::WindowConfig;
 use crate::core::assets::ImageId;
-use crate::graphics::Sprite;
 use crate::math::vec2::Vec2;
+use crate::render::SpriteDrawData;
 use crate::render::Vertex as CoreVertex;
 use crate::render::renderer::{RenderError, RenderResult, Renderer};
 use raw_window_handle::{DisplayHandle, WindowHandle};
@@ -596,7 +596,7 @@ impl Renderer for WgpuRenderer {
         Ok(())
     }
 
-    fn draw_sprites(&mut self, sprites: &[Sprite], viewport_size: (u32, u32)) {
+    fn draw_sprites(&mut self, sprites: &[SpriteDrawData], viewport_size: (u32, u32)) {
         let (w, h) = (viewport_size.0.max(1) as f32, viewport_size.1.max(1) as f32);
 
         for sprite in sprites {
@@ -604,7 +604,8 @@ impl Renderer for WgpuRenderer {
                 continue;
             }
 
-            let corners = sprite.world_corners();
+            // Calculate world corners from sprite data
+            let corners = self.compute_sprite_corners(sprite);
 
             let to_ndc = |p: Vec2| -> [f32; 2] { [(p.x / w) * 2.0 - 1.0, 1.0 - (p.y / h) * 2.0] };
 
@@ -653,5 +654,39 @@ impl Renderer for WgpuRenderer {
                 vertices,
             });
         }
+    }
+}
+
+impl WgpuRenderer {
+    /// Compute world-space corners of a sprite quad from draw data.
+    fn compute_sprite_corners(&self, sprite: &SpriteDrawData) -> [Vec2; 4] {
+        let size = sprite.size;
+        let origin_px = Vec2::new(sprite.origin.x * size.x, sprite.origin.y * size.y);
+
+        // Local corners (unscaled, unrotated)
+        let local_tl = Vec2::new(0.0, 0.0) - origin_px;
+        let local_tr = Vec2::new(size.x, 0.0) - origin_px;
+        let local_br = Vec2::new(size.x, size.y) - origin_px;
+        let local_bl = Vec2::new(0.0, size.y) - origin_px;
+
+        // Apply scale, rotation, and translation
+        let cos_r = sprite.rotation.cos();
+        let sin_r = sprite.rotation.sin();
+
+        let transform = |p: Vec2| -> Vec2 {
+            let scaled = Vec2::new(p.x * sprite.scale.x, p.y * sprite.scale.y);
+            let rotated = Vec2::new(
+                scaled.x * cos_r - scaled.y * sin_r,
+                scaled.x * sin_r + scaled.y * cos_r,
+            );
+            rotated + sprite.position
+        };
+
+        [
+            transform(local_tl),
+            transform(local_tr),
+            transform(local_br),
+            transform(local_bl),
+        ]
     }
 }

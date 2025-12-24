@@ -1,14 +1,13 @@
-use crate::graphics::Sprite;
 use crate::math::color::Color;
-use crate::render::Vertex;
 use crate::math::vec2::Vec2;
+use crate::render::{SpriteDrawData, Vertex};
 
 /// CPU-side draw list. Collects vertices and clear color; no renderer coupling.
 pub struct RenderContext {
     pub vertices: Vec<Vertex>,
     pub clear_color: Option<Color>,
     pub size: (u32, u32),
-    pub sprites: Vec<Sprite>,
+    pub sprites: Vec<SpriteDrawData>,
 }
 
 impl RenderContext {
@@ -37,8 +36,9 @@ impl RenderContext {
     }
 
     /// Queue a sprite to be rendered this frame.
-    pub fn draw_sprite(&mut self, sprite: &Sprite) {
-        self.sprites.push(sprite.clone());
+    /// Accepts anything that can be converted into sprite draw data.
+    pub fn draw_sprite(&mut self, sprite: impl Into<SpriteDrawData>) {
+        self.sprites.push(sprite.into());
     }
 
     /// Convert pixel-space to NDC.

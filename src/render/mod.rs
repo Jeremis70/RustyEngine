@@ -1,6 +1,7 @@
 pub mod context;
 pub mod renderer;
 pub mod shapes;
+pub mod sprite_data;
 pub mod vertex;
 pub mod wgpu_renderer;
 
@@ -12,5 +13,6 @@ pub use renderer::{RenderError, RenderResult, Renderer};
 pub use shapes::{
     Circle, Collider, Drawable, Ellipse, Line, Polyline, Rectangle, Transform2d, Triangle,
 };
+pub use sprite_data::SpriteDrawData;
 pub use vertex::Vertex;
 pub use wgpu_renderer::WgpuRenderer;
