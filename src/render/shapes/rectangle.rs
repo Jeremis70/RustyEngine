@@ -1,28 +1,23 @@
+use crate::math::Transform;
 use crate::math::color::Color;
-use crate::render::context::RenderContext;
-use crate::render::Vertex;
 use crate::math::vec2::Vec2;
+use crate::render::Vertex;
+use crate::render::context::RenderContext;
 
 use super::{Collider, Drawable, ShapeRef, Transform2d};
 
 pub struct Rectangle {
-    pub position: Vec2, // top-left in pixels
-    pub size: Vec2,     // width / height in pixels
+    pub transform: Transform,
+    pub size: Vec2,
     pub color: Color,
-    pub rotation: f32, // radians
-    pub scale: Vec2,   // non-uniform scale factors
-    pub origin: Vec2,  // normalized pivot (0..1)
 }
 
 impl Rectangle {
     pub fn new(position: Vec2, size: Vec2, color: Color) -> Self {
         Self {
-            position,
+            transform: Transform::at(position),
             size,
             color,
-            rotation: 0.0,
-            scale: Vec2::new(1.0, 1.0),
-            origin: Vec2::ZERO,
         }
     }
 
@@ -36,15 +31,15 @@ impl Rectangle {
     }
 
     fn transform_point(&self, local: Vec2) -> Vec2 {
-        <Self as Transform2d>::transform_point(self, local, self.size)
+        self.transform.transform_point(local, self.size)
     }
 
     pub fn set_origin_keep_position(&mut self, origin: Vec2) {
-        <Self as Transform2d>::set_origin_keep_position(self, origin, self.size);
+        self.transform.set_origin_keep_position(origin, self.size);
     }
 
     pub fn set_origin_center_keep_position(&mut self) {
-        <Self as Transform2d>::set_origin_center_keep_position(self, self.size);
+        self.transform.set_origin_center_keep_position(self.size);
     }
 
     pub fn world_outline(&self) -> Vec<Vec2> {
@@ -72,22 +67,22 @@ impl Rectangle {
     // Corner setters (keep size constant, adjust position accordingly)
     pub fn set_topleft(&mut self, p: Vec2) {
         let delta = p - self.topleft();
-        self.translate(delta);
+        self.transform.translate(delta);
     }
 
     pub fn set_topright(&mut self, p: Vec2) {
         let delta = p - self.topright();
-        self.translate(delta);
+        self.transform.translate(delta);
     }
 
     pub fn set_bottomleft(&mut self, p: Vec2) {
         let delta = p - self.bottomleft();
-        self.translate(delta);
+        self.transform.translate(delta);
     }
 
     pub fn set_bottomright(&mut self, p: Vec2) {
         let delta = p - self.bottomright();
-        self.translate(delta);
+        self.transform.translate(delta);
     }
 
     // Center getter/setter
@@ -97,7 +92,7 @@ impl Rectangle {
 
     pub fn set_center(&mut self, c: Vec2) {
         let delta = c - self.center();
-        self.translate(delta);
+        self.transform.translate(delta);
     }
 
     pub fn top(&self) -> f32 {
@@ -130,56 +125,32 @@ impl Rectangle {
 
     pub fn set_top(&mut self, t: f32) {
         let delta = t - self.top();
-        self.translate(Vec2::new(0.0, delta));
+        self.transform.translate(Vec2::new(0.0, delta));
     }
 
     pub fn set_bottom(&mut self, b: f32) {
         let delta = b - self.bottom();
-        self.translate(Vec2::new(0.0, delta));
+        self.transform.translate(Vec2::new(0.0, delta));
     }
 
     pub fn set_left(&mut self, l: f32) {
         let delta = l - self.left();
-        self.translate(Vec2::new(delta, 0.0));
+        self.transform.translate(Vec2::new(delta, 0.0));
     }
 
     pub fn set_right(&mut self, r: f32) {
         let delta = r - self.right();
-        self.translate(Vec2::new(delta, 0.0));
+        self.transform.translate(Vec2::new(delta, 0.0));
     }
 }
 
 impl Transform2d for Rectangle {
-    fn position(&self) -> Vec2 {
-        self.position
+    fn transform(&self) -> &Transform {
+        &self.transform
     }
 
-    fn position_mut(&mut self) -> &mut Vec2 {
-        &mut self.position
-    }
-
-    fn rotation(&self) -> f32 {
-        self.rotation
-    }
-
-    fn rotation_mut(&mut self) -> &mut f32 {
-        &mut self.rotation
-    }
-
-    fn scale(&self) -> Vec2 {
-        self.scale
-    }
-
-    fn scale_mut(&mut self) -> &mut Vec2 {
-        &mut self.scale
-    }
-
-    fn origin(&self) -> Vec2 {
-        self.origin
-    }
-
-    fn origin_mut(&mut self) -> &mut Vec2 {
-        &mut self.origin
+    fn transform_mut(&mut self) -> &mut Transform {
+        &mut self.transform
     }
 }
 
@@ -229,7 +200,7 @@ impl Drawable for Rectangle {
 
 impl Collider for Rectangle {
     fn contains_point(&self, point: Vec2) -> bool {
-        if let Some(local) = <Self as Transform2d>::to_local(self, point, self.size) {
+        if let Some(local) = self.transform.to_local(point, self.size) {
             local.x >= 0.0 && local.x <= self.size.x && local.y >= 0.0 && local.y <= self.size.y
         } else {
             false

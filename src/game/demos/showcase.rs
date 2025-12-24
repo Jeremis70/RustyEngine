@@ -13,7 +13,7 @@ use crate::math::vec2::Vec2;
 use crate::render::context::RenderContext;
 use crate::render::shapes::Polygon;
 use crate::render::{
-    Circle, Collider, Drawable, Ellipse, Line, Polyline, Rectangle, Transform2d, Triangle,
+    Circle, Collider, Drawable, Ellipse, Line, Polyline, Rectangle, Triangle,
 };
 
 const MUSIC_TRACK: &str =
@@ -110,9 +110,9 @@ impl Scene {
     fn new() -> Self {
         let mut rectangle = Rectangle::new(Vec2::new(0.0, 0.0), Vec2::new(100.0, 50.0), Color::RED);
         rectangle.set_origin_center_keep_position();
-        rectangle.translate(Vec2::new(200.0, 120.0));
-        rectangle.scale_uniform(1.35);
-        rectangle.rotate(FRAC_PI_4);
+        rectangle.transform.translate(Vec2::new(200.0, 120.0));
+        rectangle.transform.scale_uniform(1.35);
+        rectangle.transform.rotate(FRAC_PI_4);
 
         let mut triangle = Triangle::new(
             Vec2::new(200.0, 200.0),
@@ -121,13 +121,13 @@ impl Scene {
             Color::GREEN,
         );
         triangle.set_origin_center_keep_position();
-        triangle.translate(Vec2::new(-120.0, -80.0));
-        triangle.rotate(-FRAC_PI_4 * 0.5);
+        triangle.transform.translate(Vec2::new(-120.0, -80.0));
+        triangle.transform.rotate(-FRAC_PI_4 * 0.5);
 
         let mut circle = Circle::new(Vec2::new(400.0, 200.0), 75.0, Color::YELLOW);
         circle.set_origin_center_keep_position();
-        circle.scale_uniform(1.1);
-        circle.rotate(FRAC_PI_4 * 0.5);
+        circle.transform.scale_uniform(1.1);
+        circle.transform.rotate(FRAC_PI_4 * 0.5);
 
         let mut polygon = Polygon::new(
             vec![
@@ -141,9 +141,9 @@ impl Scene {
             Color::new(0.9, 0.3, 0.8, 1.0),
         );
         polygon.set_origin_center_keep_position();
-        polygon.translate(Vec2::new(40.0, 20.0));
-        polygon.set_scale(Vec2::new(0.85, 1.15));
-        polygon.rotate(FRAC_PI_4 * 0.25);
+        polygon.transform.translate(Vec2::new(40.0, 20.0));
+        polygon.transform.set_scale(Vec2::new(0.85, 1.15));
+        polygon.transform.rotate(FRAC_PI_4 * 0.25);
 
         let mut ellipse = Ellipse::new(
             Vec2::new(600.0, 260.0),
@@ -152,8 +152,8 @@ impl Scene {
             Color::new(0.2, 0.9, 1.0, 1.0),
         );
         ellipse.set_origin_center_keep_position();
-        ellipse.set_scale(Vec2::new(1.1, 0.8));
-        ellipse.rotate(-FRAC_PI_4 * 0.4);
+        ellipse.transform.set_scale(Vec2::new(1.1, 0.8));
+        ellipse.transform.rotate(-FRAC_PI_4 * 0.4);
 
         let mut line = Line::new(
             Vec2::new(80.0, 340.0),
@@ -162,8 +162,8 @@ impl Scene {
             10.0,
         );
         line.set_origin_center_keep_position();
-        line.scale_uniform(1.15);
-        line.rotate(FRAC_PI_4 * 0.15);
+        line.transform.scale_uniform(1.15);
+        line.transform.rotate(FRAC_PI_4 * 0.15);
 
         let mut polyline = Polyline::new(
             vec![
@@ -177,8 +177,8 @@ impl Scene {
             8.0,
         );
         polyline.set_origin_center_keep_position();
-        polyline.translate(Vec2::new(-40.0, -60.0));
-        polyline.rotate(-FRAC_PI_4 * 0.2);
+        polyline.transform.translate(Vec2::new(-40.0, -60.0));
+        polyline.transform.rotate(-FRAC_PI_4 * 0.2);
 
         let scene = Self {
             rectangle,
@@ -199,15 +199,15 @@ impl Scene {
     fn update(&mut self, dt: f32) {
         self.time += dt;
 
-        self.rectangle.rotate(0.35 * dt);
-        self.triangle.rotate(-0.2 * dt);
-        self.polygon.rotate(0.25 * dt);
-        self.ellipse.rotate(-0.4 * dt);
-        self.line.rotate(0.15 * dt);
-        self.polyline.rotate(0.2 * dt);
+        self.rectangle.transform.rotate(0.35 * dt);
+        self.triangle.transform.rotate(-0.2 * dt);
+        self.polygon.transform.rotate(0.25 * dt);
+        self.ellipse.transform.rotate(-0.4 * dt);
+        self.line.transform.rotate(0.15 * dt);
+        self.polyline.transform.rotate(0.2 * dt);
 
         let pulsate = 1.0 + 0.05 * (self.time * 2.0).sin();
-        self.circle.set_scale(Vec2::new(pulsate, pulsate));
+        self.circle.transform.set_scale(Vec2::new(pulsate, pulsate));
 
         // Update collision detection every frame
         self.handle_pointer(self.cursor);

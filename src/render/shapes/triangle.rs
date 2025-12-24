@@ -1,4 +1,5 @@
 use crate::math::color::Color;
+use crate::math::Transform;
 use crate::render::context::RenderContext;
 use crate::render::Vertex;
 use crate::math::vec2::Vec2;
@@ -6,12 +7,9 @@ use crate::math::vec2::Vec2;
 use super::{Collider, Drawable, ShapeRef, Transform2d};
 
 pub struct Triangle {
-    pub position: Vec2,
+    pub transform: Transform,
     pub local_points: [Vec2; 3],
     pub color: Color,
-    pub rotation: f32,
-    pub scale: Vec2,
-    pub origin: Vec2,
     pub size: Vec2,
 }
 
@@ -27,18 +25,15 @@ impl Triangle {
         let local_points = [p1 - position, p2 - position, p3 - position];
 
         Self {
-            position,
+            transform: Transform::at(position),
             local_points,
             color,
-            rotation: 0.0,
-            scale: Vec2::new(1.0, 1.0),
-            origin: Vec2::ZERO,
             size,
         }
     }
 
     fn transform_point(&self, local: Vec2) -> Vec2 {
-        <Self as Transform2d>::transform_point(self, local, self.size)
+        self.transform.transform_point(local, self.size)
     }
 
     fn world_points(&self) -> [Vec2; 3] {
@@ -50,11 +45,11 @@ impl Triangle {
     }
 
     pub fn set_origin_keep_position(&mut self, origin: Vec2) {
-        <Self as Transform2d>::set_origin_keep_position(self, origin, self.size);
+        self.transform.set_origin_keep_position(origin, self.size);
     }
 
     pub fn set_origin_center_keep_position(&mut self) {
-        <Self as Transform2d>::set_origin_center_keep_position(self, self.size);
+        self.transform.set_origin_center_keep_position(self.size);
     }
 
     pub fn world_outline(&self) -> Vec<Vec2> {
@@ -87,42 +82,18 @@ impl Drawable for Triangle {
 }
 
 impl Transform2d for Triangle {
-    fn position(&self) -> Vec2 {
-        self.position
+    fn transform(&self) -> &Transform {
+        &self.transform
     }
 
-    fn position_mut(&mut self) -> &mut Vec2 {
-        &mut self.position
-    }
-
-    fn rotation(&self) -> f32 {
-        self.rotation
-    }
-
-    fn rotation_mut(&mut self) -> &mut f32 {
-        &mut self.rotation
-    }
-
-    fn scale(&self) -> Vec2 {
-        self.scale
-    }
-
-    fn scale_mut(&mut self) -> &mut Vec2 {
-        &mut self.scale
-    }
-
-    fn origin(&self) -> Vec2 {
-        self.origin
-    }
-
-    fn origin_mut(&mut self) -> &mut Vec2 {
-        &mut self.origin
+    fn transform_mut(&mut self) -> &mut Transform {
+        &mut self.transform
     }
 }
 
 impl Collider for Triangle {
     fn contains_point(&self, p: Vec2) -> bool {
-        if let Some(local) = <Self as Transform2d>::to_local(self, p, self.size) {
+        if let Some(local) = self.transform.to_local(p, self.size) {
             let a = self.local_points[0];
             let b = self.local_points[1];
             let c = self.local_points[2];

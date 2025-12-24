@@ -1,4 +1,5 @@
 use crate::math::color::Color;
+use crate::math::Transform;
 use crate::render::context::RenderContext;
 use crate::render::Vertex;
 use crate::math::vec2::Vec2;
@@ -6,13 +7,10 @@ use crate::math::vec2::Vec2;
 use super::{Collider, Drawable, ShapeRef, Transform2d};
 
 pub struct Polyline {
-    pub position: Vec2,
+    pub transform: Transform,
     pub local_points: Vec<Vec2>,
     pub color: Color,
     pub thickness: f32,
-    pub rotation: f32,
-    pub scale: Vec2,
-    pub origin: Vec2,
     pub size: Vec2,
 }
 
@@ -20,13 +18,10 @@ impl Polyline {
     pub fn new(points: Vec<Vec2>, color: Color, thickness: f32) -> Self {
         if points.is_empty() {
             return Self {
-                position: Vec2::ZERO,
+                transform: Transform::new(),
                 local_points: Vec::new(),
                 color,
                 thickness,
-                rotation: 0.0,
-                scale: Vec2::new(1.0, 1.0),
-                origin: Vec2::ZERO,
                 size: Vec2::ZERO,
             };
         }
@@ -49,23 +44,20 @@ impl Polyline {
         let local_points = points.into_iter().map(|p| p - position).collect();
 
         Self {
-            position,
+            transform: Transform::at(position),
             local_points,
             color,
             thickness,
-            rotation: 0.0,
-            scale: Vec2::new(1.0, 1.0),
-            origin: Vec2::ZERO,
             size,
         }
     }
 
     pub fn set_origin_keep_position(&mut self, origin: Vec2) {
-        <Self as Transform2d>::set_origin_keep_position(self, origin, self.size);
+        self.transform.set_origin_keep_position(origin, self.size);
     }
 
     pub fn set_origin_center_keep_position(&mut self) {
-        <Self as Transform2d>::set_origin_center_keep_position(self, self.size);
+        self.transform.set_origin_center_keep_position(self.size);
     }
 
     fn offset_geometry(&self) -> Option<(Vec<Vec2>, Vec<Vec2>, Vec<Vec2>)> {
@@ -172,16 +164,14 @@ impl Polyline {
             let mut outline = Vec::with_capacity(points.len() * 2);
 
             for (p, offset) in points.iter().zip(&left) {
-                outline.push(<Self as Transform2d>::transform_point(
-                    self,
+                outline.push(self.transform.transform_point(
                     *p + *offset,
                     self.size,
                 ));
             }
 
             for (p, offset) in points.iter().zip(&right).rev() {
-                outline.push(<Self as Transform2d>::transform_point(
-                    self,
+                outline.push(self.transform.transform_point(
                     *p + *offset,
                     self.size,
                 ));
@@ -205,12 +195,10 @@ impl Drawable for Polyline {
             let p0 = points[i];
             let p1 = points[i + 1];
 
-            let v0 = <Self as Transform2d>::transform_point(self, p0 + left_offsets[i], self.size);
-            let v1 =
-                <Self as Transform2d>::transform_point(self, p1 + left_offsets[i + 1], self.size);
-            let v2 =
-                <Self as Transform2d>::transform_point(self, p1 + right_offsets[i + 1], self.size);
-            let v3 = <Self as Transform2d>::transform_point(self, p0 + right_offsets[i], self.size);
+            let v0 = self.transform.transform_point(p0 + left_offsets[i], self.size);
+            let v1 = self.transform.transform_point(p1 + left_offsets[i + 1], self.size);
+            let v2 = self.transform.transform_point(p1 + right_offsets[i + 1], self.size);
+            let v3 = self.transform.transform_point(p0 + right_offsets[i], self.size);
 
             vertices.push(Vertex {
                 pos: ctx.to_ndc(v0).to_array(),
@@ -248,7 +236,7 @@ impl Collider for Polyline {
             return false;
         }
 
-        if let Some(local_point) = <Self as Transform2d>::to_local(self, point, self.size) {
+        if let Some(local_point) = self.transform.to_local(point, self.size) {
             let radius = self.thickness * 0.5;
             let radius_sq = radius * radius;
 
@@ -262,7 +250,7 @@ impl Collider for Polyline {
                     let delta = local_point - a;
                     delta * delta
                 } else {
-                    let t = ((local_point - a) * ab) / len_sq;
+                    let t: f32 = ((local_point - a) * ab) / len_sq;
                     let t_clamped = t.clamp(0.0, 1.0);
                     let closest = a + ab * t_clamped;
                     let delta = local_point - closest;
@@ -284,35 +272,11 @@ impl Collider for Polyline {
 }
 
 impl Transform2d for Polyline {
-    fn position(&self) -> Vec2 {
-        self.position
+    fn transform(&self) -> &Transform {
+        &self.transform
     }
 
-    fn position_mut(&mut self) -> &mut Vec2 {
-        &mut self.position
-    }
-
-    fn rotation(&self) -> f32 {
-        self.rotation
-    }
-
-    fn rotation_mut(&mut self) -> &mut f32 {
-        &mut self.rotation
-    }
-
-    fn scale(&self) -> Vec2 {
-        self.scale
-    }
-
-    fn scale_mut(&mut self) -> &mut Vec2 {
-        &mut self.scale
-    }
-
-    fn origin(&self) -> Vec2 {
-        self.origin
-    }
-
-    fn origin_mut(&mut self) -> &mut Vec2 {
-        &mut self.origin
+    fn transform_mut(&mut self) -> &mut Transform {
+        &mut self.transform
     }
 }

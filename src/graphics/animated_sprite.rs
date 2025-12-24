@@ -1,6 +1,7 @@
 use crate::core::assets::ImageId;
 use crate::core::events::callbacks::Callbacks;
 use crate::graphics::animation::Animation;
+use crate::math::Transform;
 use crate::math::color::Color;
 use crate::math::vec2::Vec2;
 use crate::render::{Drawable, RenderContext, SpriteDrawData, Transform2d};
@@ -17,12 +18,9 @@ pub enum PlaybackState {
 
 /// An animated sprite that cycles through animation frames with events and transitions.
 pub struct AnimatedSprite {
+    pub transform: Transform,
     pub animation: Animation,
     pub size: Vec2,
-    pub position: Vec2,
-    pub rotation: f32,
-    pub scale: Vec2,
-    pub origin: Vec2,
     pub tint: Color,
 
     current_frame: usize,
@@ -55,12 +53,9 @@ impl AnimatedSprite {
         );
 
         Self {
+            transform: Transform::new(),
             animation,
             size: Vec2::new(width as f32, height as f32),
-            position: Vec2::ZERO,
-            rotation: 0.0,
-            scale: Vec2::new(1.0, 1.0),
-            origin: Vec2::new(0.5, 0.5),
             tint: Color::WHITE,
             current_frame: 0,
             elapsed: Duration::ZERO,
@@ -77,12 +72,9 @@ impl AnimatedSprite {
     /// Create a sprite with a fallback image for empty animations.
     pub fn with_fallback(animation: Animation, width: u32, height: u32, fallback: ImageId) -> Self {
         let mut sprite = Self {
+            transform: Transform::new(),
             animation,
             size: Vec2::new(width as f32, height as f32),
-            position: Vec2::ZERO,
-            rotation: 0.0,
-            scale: Vec2::new(1.0, 1.0),
-            origin: Vec2::new(0.5, 0.5),
             tint: Color::WHITE,
             current_frame: 0,
             elapsed: Duration::ZERO,
@@ -256,46 +248,22 @@ impl AnimatedSprite {
         SpriteDrawData {
             image_id,
             size: self.size,
-            position: self.position,
-            rotation: self.rotation,
-            scale: self.scale,
-            origin: self.origin,
+            position: self.transform.position,
+            rotation: self.transform.rotation,
+            scale: self.transform.scale,
+            origin: self.transform.origin,
             tint: self.tint,
         }
     }
 }
 
 impl Transform2d for AnimatedSprite {
-    fn position(&self) -> Vec2 {
-        self.position
+    fn transform(&self) -> &Transform {
+        &self.transform
     }
 
-    fn position_mut(&mut self) -> &mut Vec2 {
-        &mut self.position
-    }
-
-    fn rotation(&self) -> f32 {
-        self.rotation
-    }
-
-    fn rotation_mut(&mut self) -> &mut f32 {
-        &mut self.rotation
-    }
-
-    fn scale(&self) -> Vec2 {
-        self.scale
-    }
-
-    fn scale_mut(&mut self) -> &mut Vec2 {
-        &mut self.scale
-    }
-
-    fn origin(&self) -> Vec2 {
-        self.origin
-    }
-
-    fn origin_mut(&mut self) -> &mut Vec2 {
-        &mut self.origin
+    fn transform_mut(&mut self) -> &mut Transform {
+        &mut self.transform
     }
 }
 

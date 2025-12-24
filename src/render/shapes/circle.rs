@@ -1,4 +1,5 @@
 use crate::math::color::Color;
+use crate::math::Transform;
 use crate::render::context::RenderContext;
 use crate::render::Vertex;
 use crate::math::vec2::Vec2;
@@ -6,26 +7,20 @@ use crate::math::vec2::Vec2;
 use super::{Collider, Drawable, ShapeRef, Transform2d};
 
 pub struct Circle {
-    pub position: Vec2, // top-left of bounding box
+    pub transform: Transform,
     pub radius: f32,
     pub color: Color,
-    pub segments: u32, // Segment count controls tessellation quality
-    pub rotation: f32,
-    pub scale: Vec2,
-    pub origin: Vec2,
+    pub segments: u32,
 }
 
 impl Circle {
     pub fn new(center: Vec2, radius: f32, color: Color) -> Self {
         let position = Vec2::new(center.x - radius, center.y - radius);
         Self {
-            position,
+            transform: Transform::at(position),
             radius,
             color,
             segments: 32,
-            rotation: 0.0,
-            scale: Vec2::new(1.0, 1.0),
-            origin: Vec2::ZERO,
         }
     }
 
@@ -38,7 +33,7 @@ impl Circle {
     }
 
     fn transform_point(&self, local: Vec2) -> Vec2 {
-        <Self as Transform2d>::transform_point(self, local, self.size())
+        self.transform.transform_point(local, self.size())
     }
 
     pub fn world_center(&self) -> Vec2 {
@@ -59,11 +54,11 @@ impl Circle {
     }
 
     pub fn set_origin_keep_position(&mut self, origin: Vec2) {
-        <Self as Transform2d>::set_origin_keep_position(self, origin, self.size());
+        self.transform.set_origin_keep_position(origin, self.size());
     }
 
     pub fn set_origin_center_keep_position(&mut self) {
-        <Self as Transform2d>::set_origin_center_keep_position(self, self.size());
+        self.transform.set_origin_center_keep_position(self.size());
     }
 }
 
@@ -104,42 +99,18 @@ impl Drawable for Circle {
 }
 
 impl Transform2d for Circle {
-    fn position(&self) -> Vec2 {
-        self.position
+    fn transform(&self) -> &Transform {
+        &self.transform
     }
 
-    fn position_mut(&mut self) -> &mut Vec2 {
-        &mut self.position
-    }
-
-    fn rotation(&self) -> f32 {
-        self.rotation
-    }
-
-    fn rotation_mut(&mut self) -> &mut f32 {
-        &mut self.rotation
-    }
-
-    fn scale(&self) -> Vec2 {
-        self.scale
-    }
-
-    fn scale_mut(&mut self) -> &mut Vec2 {
-        &mut self.scale
-    }
-
-    fn origin(&self) -> Vec2 {
-        self.origin
-    }
-
-    fn origin_mut(&mut self) -> &mut Vec2 {
-        &mut self.origin
+    fn transform_mut(&mut self) -> &mut Transform {
+        &mut self.transform
     }
 }
 
 impl Collider for Circle {
     fn contains_point(&self, point: Vec2) -> bool {
-        if let Some(local) = <Self as Transform2d>::to_local(self, point, self.size()) {
+        if let Some(local) = self.transform.to_local(point, self.size()) {
             let center = self.local_center();
             (local - center).length() <= self.radius
         } else {

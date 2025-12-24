@@ -1,18 +1,16 @@
+use crate::math::Transform;
 use crate::math::color::Color;
-use crate::render::context::RenderContext;
-use crate::render::Vertex;
 use crate::math::vec2::Vec2;
+use crate::render::Vertex;
+use crate::render::context::RenderContext;
 
 use super::{Collider, Drawable, ShapeRef, Transform2d};
 
 pub struct Ellipse {
-    pub position: Vec2,
+    pub transform: Transform,
     pub radii: Vec2,
     pub color: Color,
     pub segments: u32,
-    pub rotation: f32,
-    pub scale: Vec2,
-    pub origin: Vec2,
 }
 
 impl Ellipse {
@@ -21,13 +19,10 @@ impl Ellipse {
         let position = center - radii;
 
         Self {
-            position,
+            transform: Transform::at(position),
             radii,
             color,
             segments: 32,
-            rotation: 0.0,
-            scale: Vec2::new(1.0, 1.0),
-            origin: Vec2::ZERO,
         }
     }
 
@@ -40,7 +35,7 @@ impl Ellipse {
     }
 
     fn transform_point(&self, local: Vec2) -> Vec2 {
-        <Self as Transform2d>::transform_point(self, local, self.size())
+        self.transform.transform_point(local, self.size())
     }
 
     pub fn world_center(&self) -> Vec2 {
@@ -61,11 +56,11 @@ impl Ellipse {
     }
 
     pub fn set_origin_keep_position(&mut self, origin: Vec2) {
-        <Self as Transform2d>::set_origin_keep_position(self, origin, self.size());
+        self.transform.set_origin_keep_position(origin, self.size());
     }
 
     pub fn set_origin_center_keep_position(&mut self) {
-        <Self as Transform2d>::set_origin_center_keep_position(self, self.size());
+        self.transform.set_origin_center_keep_position(self.size());
     }
 }
 
@@ -107,42 +102,18 @@ impl Drawable for Ellipse {
 }
 
 impl Transform2d for Ellipse {
-    fn position(&self) -> Vec2 {
-        self.position
+    fn transform(&self) -> &Transform {
+        &self.transform
     }
 
-    fn position_mut(&mut self) -> &mut Vec2 {
-        &mut self.position
-    }
-
-    fn rotation(&self) -> f32 {
-        self.rotation
-    }
-
-    fn rotation_mut(&mut self) -> &mut f32 {
-        &mut self.rotation
-    }
-
-    fn scale(&self) -> Vec2 {
-        self.scale
-    }
-
-    fn scale_mut(&mut self) -> &mut Vec2 {
-        &mut self.scale
-    }
-
-    fn origin(&self) -> Vec2 {
-        self.origin
-    }
-
-    fn origin_mut(&mut self) -> &mut Vec2 {
-        &mut self.origin
+    fn transform_mut(&mut self) -> &mut Transform {
+        &mut self.transform
     }
 }
 
 impl Collider for Ellipse {
     fn contains_point(&self, p: Vec2) -> bool {
-        if let Some(local) = <Self as Transform2d>::to_local(self, p, self.size()) {
+        if let Some(local) = self.transform.to_local(p, self.size()) {
             let centered = local - self.local_center();
             let x = centered.x / self.radii.x;
             let y = centered.y / self.radii.y;

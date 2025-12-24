@@ -38,7 +38,7 @@ pub fn install(engine: &mut Engine) {
     // --- Create manual animated sprite (old method) ---
     let image = engine.assets.get_image(sprite_ids[0]).unwrap();
     let mut sprite = Sprite::from_image(sprite_ids[0], image);
-    sprite.position = Vec2::new(250.0, 200.0);
+    sprite.transform.position = Vec2::new(250.0, 200.0);
 
     // --- Shared sprite state ---
     let sprite = Rc::new(RefCell::new(sprite));
@@ -47,7 +47,7 @@ pub fn install(engine: &mut Engine) {
     let animation = Animation::looping(&sprite_ids, Duration::from_millis(100));
 
     let mut animated_sprite = AnimatedSprite::new(animation, 48, 48);
-    animated_sprite.position = Vec2::new(450.0, 200.0);
+    animated_sprite.transform.position = Vec2::new(450.0, 200.0);
     let animated_sprite = Rc::new(RefCell::new(animated_sprite));
 
     // --- Animation state ---
