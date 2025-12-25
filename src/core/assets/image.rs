@@ -1,16 +1,11 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use super::id::AssetId;
+
+/// Marker type for image assets.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct ImageMarker;
 
 /// Unique identifier for an image asset.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct ImageId(pub(crate) usize);
-
-impl ImageId {
-    pub(crate) fn new() -> Self {
-        static ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let id = ID_COUNTER.fetch_add(1, Ordering::SeqCst);
-        ImageId(id)
-    }
-}
+pub type ImageId = AssetId<ImageMarker>;
 
 /// CPU-side representation of an image (RGBA8).
 #[derive(Debug, Clone)]

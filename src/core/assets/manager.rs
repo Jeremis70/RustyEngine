@@ -289,6 +289,35 @@ impl AssetManager {
         data
     }
 
+    pub fn load_font<P: AsRef<Path>>(&mut self, path: P) -> AssetResult<ImageId> {
+        self.load_image(path)
+    }
+
+    /// Load an image from an existing ImageAsset
+    pub fn load_image_from_asset(&mut self, asset: ImageAsset) -> AssetResult<ImageId> {
+        let image_size = asset.data.len(); // bytes
+        if self.current_memory_bytes + image_size > self.max_memory_bytes {
+            return Err(AssetError::MemoryExceeded {
+                current: self.current_memory_bytes,
+                limit: self.max_memory_bytes,
+            });
+        }
+
+        let id = ImageId::new();
+        self.images.insert(id, asset);
+        self.current_memory_bytes += image_size;
+        Ok(id)
+    }
+
+    /// Check if an image with the given ID exists
+    pub fn image_exists(&self, id: ImageId) -> bool {
+        self.images.contains_key(&id)
+    }
+    /// Get the total number of loaded images
+    pub fn image_count(&self) -> usize {
+        self.images.len()
+    }
+
     /// Retrieve a previously loaded image by its identifier.
     pub fn get_image(&self, id: ImageId) -> Option<&ImageAsset> {
         self.images.get(&id)
@@ -308,6 +337,29 @@ impl AssetManager {
         } else {
             false
         }
+    }
+    /// Load multiple images from disk
+    pub fn load_images<P: AsRef<Path>>(&mut self, paths: &[P]) -> AssetResult<Vec<ImageId>> {
+        let mut ids = Vec::with_capacity(paths.len());
+        for path in paths {
+            let id = self.load_image(path)?;
+            ids.push(id);
+        }
+        Ok(ids)
+    }
+
+    /// Unload multiple images from memory
+    pub fn unload_images(&mut self, ids: &[ImageId]) {
+        for &id in ids {
+            self.unload_image(id);
+        }
+    }
+
+    /// Unload all images from memory
+    pub fn unload_all(&mut self) {
+        self.images.clear();
+        self.current_memory_bytes = 0;
+        log::debug!("Unloaded all images, memory now: 0");
     }
 
     /// Get current memory usage in bytes
