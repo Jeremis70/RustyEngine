@@ -7,7 +7,14 @@ use crate::render::context::RenderContext;
 
 /// Minimal scaffold that illustrates where to plug update and render code.
 pub fn install(engine: &mut Engine) {
-    info!("Template demo chargée: ajoutez votre logique ici.");
+    info!("Font demo loaded.");
+
+    // Example: Load a font (uncomment when you have a font file)
+    let font_id = engine
+        .assets
+        .load_font(r#"D:\Code\Rust\RustyEngine\src\game\assets\LEMONMILK-Regular.otf"#)
+        .expect("Failed to load font");
+    info!("Font loaded with ID: {:?}", font_id);
 
     engine.events.on_update(|_state: &EngineState| {
         // Ajoutez ici votre logique de jeu (physique, IA, etc.).

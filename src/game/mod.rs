@@ -1,7 +1,7 @@
 pub mod demos;
 
 /// Changez cette constante pour lancer une démo différente.
-const ACTIVE_DEMO: DemoSelector = DemoSelector::Sprite;
+const ACTIVE_DEMO: DemoSelector = DemoSelector::Font;
 
 #[derive(Clone, Copy)]
 enum DemoSelector {

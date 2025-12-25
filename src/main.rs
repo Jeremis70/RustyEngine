@@ -15,7 +15,9 @@ use crate::render::WgpuRenderer;
 use log::error;
 
 fn main() {
-    env_logger::init();
+    env_logger::Builder::from_default_env()
+        .filter_module("RustyEngine", log::LevelFilter::Debug)
+        .init();
 
     let backend = match WinitBackend::try_new() {
         Ok(b) => b,

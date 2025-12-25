@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use super::error::{AssetError, AssetResult};
+use super::font::{FontAsset, FontId};
 use super::image::{ImageAsset, ImageId};
 
 /// Configuration for extracting sprites from a spritesheet
@@ -70,11 +71,31 @@ pub enum SpriteOrder {
 /// Tracks memory usage and supports unloading.
 pub struct AssetManager {
     images: HashMap<ImageId, ImageAsset>,
+    fonts: HashMap<FontId, FontAsset>,
     max_memory_bytes: usize,
     current_memory_bytes: usize,
 }
 
 impl AssetManager {
+    fn ensure_capacity_for(&self, additional_bytes: usize) -> AssetResult<()> {
+        let new_total = self
+            .current_memory_bytes
+            .checked_add(additional_bytes)
+            .ok_or(AssetError::MemoryExceeded {
+                current: self.current_memory_bytes,
+                limit: self.max_memory_bytes,
+            })?;
+
+        if new_total > self.max_memory_bytes {
+            return Err(AssetError::MemoryExceeded {
+                current: self.current_memory_bytes,
+                limit: self.max_memory_bytes,
+            });
+        }
+
+        Ok(())
+    }
+
     /// Create a new asset manager with unlimited memory
     pub fn new() -> Self {
         Self::with_limit(usize::MAX)
@@ -87,6 +108,7 @@ impl AssetManager {
     pub fn with_limit(max_bytes: usize) -> Self {
         Self {
             images: HashMap::new(),
+            fonts: HashMap::new(),
             max_memory_bytes: max_bytes,
             current_memory_bytes: 0,
         }
@@ -105,12 +127,7 @@ impl AssetManager {
         let data = rgba.into_raw();
 
         let image_size = data.len(); // bytes
-        if self.current_memory_bytes + image_size > self.max_memory_bytes {
-            return Err(AssetError::MemoryExceeded {
-                current: self.current_memory_bytes,
-                limit: self.max_memory_bytes,
-            });
-        }
+        self.ensure_capacity_for(image_size)?;
 
         let image = ImageAsset {
             width,
@@ -131,6 +148,18 @@ impl AssetManager {
     ) -> AssetResult<Vec<ImageId>> {
         let path_buf = path.as_ref().to_path_buf();
 
+        if config.columns == 0
+            || config.rows == 0
+            || config.sprite_width == 0
+            || config.sprite_height == 0
+        {
+            return Err(AssetError::InvalidSpritesheet {
+                path: path_buf,
+                reason: "Spritesheet config must have non-zero columns/rows/sprite dimensions"
+                    .to_string(),
+            });
+        }
+
         // Load the full spritesheet
         let dyn_img = image::open(&path_buf).map_err(|source| AssetError::Image {
             source,
@@ -142,12 +171,30 @@ impl AssetManager {
         let sheet_width = spritesheet.width();
         let sheet_height = spritesheet.height();
 
-        let expected_width = config.margin * 2
-            + config.columns * config.sprite_width
-            + (config.columns - 1) * config.spacing;
-        let expected_height = config.margin * 2
-            + config.rows * config.sprite_height
-            + (config.rows - 1) * config.spacing;
+        let expected_width = (config.margin)
+            .checked_mul(2)
+            .and_then(|v| v.checked_add(config.columns.checked_mul(config.sprite_width)?))
+            .and_then(|v| {
+                v.checked_add(
+                    config
+                        .columns
+                        .saturating_sub(1)
+                        .checked_mul(config.spacing)?,
+                )
+            })
+            .ok_or_else(|| AssetError::InvalidSpritesheet {
+                path: path_buf.clone(),
+                reason: "Spritesheet expected width overflow".to_string(),
+            })?;
+
+        let expected_height = (config.margin)
+            .checked_mul(2)
+            .and_then(|v| v.checked_add(config.rows.checked_mul(config.sprite_height)?))
+            .and_then(|v| v.checked_add(config.rows.saturating_sub(1).checked_mul(config.spacing)?))
+            .ok_or_else(|| AssetError::InvalidSpritesheet {
+                path: path_buf.clone(),
+                reason: "Spritesheet expected height overflow".to_string(),
+            })?;
 
         if sheet_width < expected_width || sheet_height < expected_height {
             return Err(AssetError::InvalidSpritesheet {
@@ -181,12 +228,7 @@ impl AssetManager {
             let image_size = sprite_data.len();
 
             // Check memory limit
-            if self.current_memory_bytes + image_size > self.max_memory_bytes {
-                return Err(AssetError::MemoryExceeded {
-                    current: self.current_memory_bytes,
-                    limit: self.max_memory_bytes,
-                });
-            }
+            self.ensure_capacity_for(image_size)?;
 
             // Create and store the sprite
             let sprite = ImageAsset {
@@ -289,19 +331,49 @@ impl AssetManager {
         data
     }
 
-    pub fn load_font<P: AsRef<Path>>(&mut self, path: P) -> AssetResult<ImageId> {
-        self.load_image(path)
+    pub fn load_font<P: AsRef<Path>>(&mut self, path: P) -> AssetResult<FontId> {
+        let path_buf = path.as_ref().to_path_buf();
+
+        // Read the font file as raw bytes
+        let data = std::fs::read(&path_buf).map_err(|source| AssetError::Io {
+            source,
+            path: path_buf.clone(),
+        })?;
+
+        let font_size = data.len();
+
+        // Check memory limit
+        self.ensure_capacity_for(font_size)?;
+
+        let font = FontAsset { data };
+        let id = FontId::new();
+
+        self.fonts.insert(id, font);
+        self.current_memory_bytes += font_size;
+
+        log::info!(
+            "Loaded font {:?}, memory usage: {}",
+            path_buf,
+            self.current_memory_bytes
+        );
+
+        Ok(id)
+    }
+
+    pub fn load_font_from_asset(&mut self, asset: FontAsset) -> AssetResult<FontId> {
+        let font_size = asset.data.len(); // bytes
+        self.ensure_capacity_for(font_size)?;
+
+        let id = FontId::new();
+        self.fonts.insert(id, asset);
+        self.current_memory_bytes += font_size;
+        Ok(id)
     }
 
     /// Load an image from an existing ImageAsset
     pub fn load_image_from_asset(&mut self, asset: ImageAsset) -> AssetResult<ImageId> {
         let image_size = asset.data.len(); // bytes
-        if self.current_memory_bytes + image_size > self.max_memory_bytes {
-            return Err(AssetError::MemoryExceeded {
-                current: self.current_memory_bytes,
-                limit: self.max_memory_bytes,
-            });
-        }
+        self.ensure_capacity_for(image_size)?;
 
         let id = ImageId::new();
         self.images.insert(id, asset);
@@ -323,6 +395,21 @@ impl AssetManager {
         self.images.get(&id)
     }
 
+    /// Check if a font with the given ID exists
+    pub fn font_exists(&self, id: FontId) -> bool {
+        self.fonts.contains_key(&id)
+    }
+
+    /// Get the total number of loaded fonts
+    pub fn font_count(&self) -> usize {
+        self.fonts.len()
+    }
+
+    /// Retrieve a previously loaded font by its identifier.
+    pub fn get_font(&self, id: FontId) -> Option<&FontAsset> {
+        self.fonts.get(&id)
+    }
+
     /// Unload and remove an image from memory
     /// Returns true if the image was found and unloaded, false otherwise
     pub fn unload_image(&mut self, id: ImageId) -> bool {
@@ -338,6 +425,31 @@ impl AssetManager {
             false
         }
     }
+
+    /// Unload and remove a font from memory
+    /// Returns true if the font was found and unloaded, false otherwise
+    pub fn unload_font(&mut self, id: FontId) -> bool {
+        if let Some(font) = self.fonts.remove(&id) {
+            self.current_memory_bytes -= font.data.len();
+            log::debug!(
+                "Unloaded font {:?}, memory now: {}",
+                id,
+                self.current_memory_bytes
+            );
+            true
+        } else {
+            false
+        }
+    }
+    pub fn load_fonts<P: AsRef<Path>>(&mut self, paths: &[P]) -> AssetResult<Vec<FontId>> {
+        let mut ids = Vec::with_capacity(paths.len());
+        for path in paths {
+            let id = self.load_font(path)?;
+            ids.push(id);
+        }
+        Ok(ids)
+    }
+
     /// Load multiple images from disk
     pub fn load_images<P: AsRef<Path>>(&mut self, paths: &[P]) -> AssetResult<Vec<ImageId>> {
         let mut ids = Vec::with_capacity(paths.len());
@@ -355,16 +467,67 @@ impl AssetManager {
         }
     }
 
-    /// Unload all images from memory
+    /// Unload multiple fonts from memory
+    pub fn unload_fonts(&mut self, ids: &[FontId]) {
+        for &id in ids {
+            self.unload_font(id);
+        }
+    }
+
+    pub fn unload_all_fonts(&mut self) {
+        let freed: usize = self.fonts.values().map(|font| font.data.len()).sum();
+        self.fonts.clear();
+        self.current_memory_bytes = self.current_memory_bytes.saturating_sub(freed);
+        log::debug!(
+            "Unloaded all fonts, memory now: {}",
+            self.current_memory_bytes
+        );
+    }
+
+    pub fn unload_all_images(&mut self) {
+        let freed: usize = self.images.values().map(|image| image.data.len()).sum();
+        self.images.clear();
+        self.current_memory_bytes = self.current_memory_bytes.saturating_sub(freed);
+        log::debug!(
+            "Unloaded all images, memory now: {}",
+            self.current_memory_bytes
+        );
+    }
+
+    /// Unload all assets from memory
     pub fn unload_all(&mut self) {
         self.images.clear();
+        self.fonts.clear();
         self.current_memory_bytes = 0;
-        log::debug!("Unloaded all images, memory now: 0");
+        log::debug!(
+            "Unloaded all assets, memory now: {}",
+            self.current_memory_bytes
+        );
     }
 
     /// Get current memory usage in bytes
     pub fn memory_usage(&self) -> usize {
         self.current_memory_bytes
+    }
+
+    /// Get memory usage for images only (sum of raw pixel buffers).
+    pub fn images_memory_usage_bytes(&self) -> usize {
+        self.images.values().map(|image| image.data.len()).sum()
+    }
+
+    /// Get memory usage for fonts only (sum of raw font buffers).
+    pub fn fonts_memory_usage_bytes(&self) -> usize {
+        self.fonts.values().map(|font| font.data.len()).sum()
+    }
+
+    /// Get memory usage for a specific image.
+    pub fn image_memory_usage_bytes(&self, id: ImageId) -> Option<usize> {
+        self.images.get(&id).map(|image| image.data.len())
+    }
+
+    /// Get memory usage for a specific font.
+    pub fn font_memory_usage_bytes(&self, id: FontId) -> Option<usize> {
+        self.fonts.get(&id).map(|font| font.data.len())
     }
 
     /// Get memory limit in bytes
@@ -384,6 +547,11 @@ impl AssetManager {
     /// Iterate over all loaded images.
     pub fn iter_images(&self) -> impl Iterator<Item = (ImageId, &ImageAsset)> {
         self.images.iter().map(|(&id, asset)| (id, asset))
+    }
+
+    /// Iterate over all loaded fonts.
+    pub fn iter_fonts(&self) -> impl Iterator<Item = (FontId, &FontAsset)> {
+        self.fonts.iter().map(|(&id, asset)| (id, asset))
     }
 }
 impl Default for AssetManager {
