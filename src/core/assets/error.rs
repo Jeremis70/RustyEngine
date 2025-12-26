@@ -24,4 +24,10 @@ pub enum AssetError {
 
     #[error("Invalid Spritesheet format in asset {path:?}: {reason}")]
     InvalidSpritesheet { path: PathBuf, reason: String },
+
+    #[error("Invalid font format")]
+    InvalidFont,
+
+    #[error("Out of memory")]
+    OutOfMemory,
 }

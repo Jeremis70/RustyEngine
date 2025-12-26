@@ -14,6 +14,10 @@ pub struct SpriteDrawData {
     pub scale: Vec2,
     pub origin: Vec2,
     pub tint: Color,
+
+    // UV coordinates for atlas support
+    pub uv_min: Vec2,
+    pub uv_max: Vec2,
 }
 
 impl SpriteDrawData {
@@ -27,6 +31,8 @@ impl SpriteDrawData {
             scale: Vec2::new(1.0, 1.0),
             origin: Vec2::new(0.5, 0.5),
             tint: Color::WHITE,
+            uv_min: Vec2::new(0.0, 0.0),
+            uv_max: Vec2::new(1.0, 1.0),
         }
     }
 }

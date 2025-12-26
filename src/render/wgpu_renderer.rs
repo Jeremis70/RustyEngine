@@ -616,35 +616,38 @@ impl Renderer for WgpuRenderer {
 
             let color: [f32; 4] = sprite.tint.to_linear_rgba();
 
+            let uv_min = [sprite.uv_min.x, sprite.uv_min.y];
+            let uv_max = [sprite.uv_max.x, sprite.uv_max.y];
+
             let vertices = [
                 SpriteVertexGPU {
                     pos: tl,
-                    uv: [0.0, 0.0],
+                    uv: [uv_min[0], uv_min[1]],
                     color,
                 },
                 SpriteVertexGPU {
                     pos: tr,
-                    uv: [1.0, 0.0],
+                    uv: [uv_max[0], uv_min[1]],
                     color,
                 },
                 SpriteVertexGPU {
                     pos: br,
-                    uv: [1.0, 1.0],
+                    uv: [uv_max[0], uv_max[1]],
                     color,
                 },
                 SpriteVertexGPU {
                     pos: tl,
-                    uv: [0.0, 0.0],
+                    uv: [uv_min[0], uv_min[1]],
                     color,
                 },
                 SpriteVertexGPU {
                     pos: br,
-                    uv: [1.0, 1.0],
+                    uv: [uv_max[0], uv_max[1]],
                     color,
                 },
                 SpriteVertexGPU {
                     pos: bl,
-                    uv: [0.0, 1.0],
+                    uv: [uv_min[0], uv_max[1]],
                     color,
                 },
             ];

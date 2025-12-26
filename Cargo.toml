@@ -14,3 +14,4 @@ raw-window-handle = "0.6.2"
 bytemuck = { version = "1.20", features = ["derive"] }
 rodio = "0.21.1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp"] }
+fontdue = "0.9.3"

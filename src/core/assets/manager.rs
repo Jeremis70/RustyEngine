@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use super::error::{AssetError, AssetResult};
-use super::font::{FontAsset, FontId};
+use super::font::{FontAsset, FontId, Glyph};
 use super::image::{ImageAsset, ImageId};
 
 /// Configuration for extracting sprites from a spritesheet
@@ -331,42 +331,132 @@ impl AssetManager {
         data
     }
 
-    pub fn load_font<P: AsRef<Path>>(&mut self, path: P) -> AssetResult<FontId> {
+    pub fn load_font<P: AsRef<Path>>(&mut self, path: P, font_size: f32) -> AssetResult<FontId> {
+        use crate::math::Vec2;
+        use fontdue::Font;
+        use std::collections::HashMap;
+
         let path_buf = path.as_ref().to_path_buf();
 
-        // Read the font file as raw bytes
+        // Read font data from disk
         let data = std::fs::read(&path_buf).map_err(|source| AssetError::Io {
             source,
             path: path_buf.clone(),
         })?;
 
-        let font_size = data.len();
+        // Load the font using fontdue
+        let font = Font::from_bytes(data.clone(), fontdue::FontSettings::default())
+            .map_err(|_| AssetError::InvalidFont)?;
 
-        // Check memory limit
-        self.ensure_capacity_for(font_size)?;
+        // Prepare to rasterize glyphs into an atlas
+        const ATLAS_SIZE: u32 = 1024;
+        let mut atlas_pixels = vec![0u8; (ATLAS_SIZE * ATLAS_SIZE) as usize];
+        let mut glyphs = HashMap::new();
 
-        let font = FontAsset { data };
+        let mut pen_x = 0u32;
+        let mut pen_y = 0u32;
+        let mut row_height = 0u32;
+
+        // ASCII printable
+        for ch in 32u8..=126 {
+            let ch = ch as char;
+
+            let (metrics, bitmap) = font.rasterize(ch, font_size);
+
+            if metrics.width == 0 || metrics.height == 0 {
+                glyphs.insert(
+                    ch,
+                    Glyph {
+                        uv_min: Vec2::ZERO,
+                        uv_max: Vec2::ZERO,
+                        size: Vec2::ZERO,
+                        bearing: Vec2::new(metrics.xmin as f32, metrics.ymin as f32),
+                        advance: metrics.advance_width,
+                    },
+                );
+
+                pen_x += metrics.advance_width.ceil() as u32;
+                continue;
+            }
+
+            if pen_x + metrics.width as u32 >= ATLAS_SIZE {
+                pen_x = 0;
+                pen_y += row_height + 1;
+                row_height = 0;
+            }
+
+            if pen_y + metrics.height as u32 >= ATLAS_SIZE {
+                return Err(AssetError::OutOfMemory);
+            }
+
+            // Copy bitmap into atlas
+            for y in 0..metrics.height {
+                for x in 0..metrics.width {
+                    let src = x + y * metrics.width;
+                    let dst = (pen_x + x as u32) + (pen_y + y as u32) * ATLAS_SIZE;
+
+                    atlas_pixels[dst as usize] = bitmap[src];
+                }
+            }
+
+            let uv_min = Vec2::new(
+                pen_x as f32 / ATLAS_SIZE as f32,
+                pen_y as f32 / ATLAS_SIZE as f32,
+            );
+
+            let uv_max = Vec2::new(
+                (pen_x + metrics.width as u32) as f32 / ATLAS_SIZE as f32,
+                (pen_y + metrics.height as u32) as f32 / ATLAS_SIZE as f32,
+            );
+
+            glyphs.insert(
+                ch,
+                Glyph {
+                    uv_min,
+                    uv_max,
+                    size: Vec2::new(metrics.width as f32, metrics.height as f32),
+                    bearing: Vec2::new(metrics.xmin as f32, metrics.ymin as f32),
+                    advance: metrics.advance_width,
+                },
+            );
+
+            pen_x += metrics.width as u32 + 1;
+            row_height = row_height.max(metrics.height as u32);
+        }
+
+        // Convert grayscale atlas to RGBA
+        let mut atlas_rgba = Vec::with_capacity((ATLAS_SIZE * ATLAS_SIZE * 4) as usize);
+        for &gray in &atlas_pixels {
+            atlas_rgba.push(255); // R
+            atlas_rgba.push(255); // G
+            atlas_rgba.push(255); // B
+            atlas_rgba.push(gray); // A (alpha = grayscale value)
+        }
+
+        let atlas_asset = ImageAsset {
+            width: ATLAS_SIZE,
+            height: ATLAS_SIZE,
+            data: atlas_rgba,
+        };
+        let atlas_image = self.load_image_from_asset(atlas_asset)?;
+
+        // Create FontAsset
+        let font_asset = FontAsset {
+            data,
+            atlas: atlas_image,
+            glyphs,
+            line_height: font
+                .horizontal_line_metrics(font_size)
+                .map(|m| m.new_line_size)
+                .unwrap_or(font_size),
+            font_size,
+        };
+
         let id = FontId::new();
+        self.fonts.insert(id, font_asset);
 
-        self.fonts.insert(id, font);
-        self.current_memory_bytes += font_size;
+        log::info!("Loaded font {:?} ({}px)", path_buf, font_size);
 
-        log::info!(
-            "Loaded font {:?}, memory usage: {}",
-            path_buf,
-            self.current_memory_bytes
-        );
-
-        Ok(id)
-    }
-
-    pub fn load_font_from_asset(&mut self, asset: FontAsset) -> AssetResult<FontId> {
-        let font_size = asset.data.len(); // bytes
-        self.ensure_capacity_for(font_size)?;
-
-        let id = FontId::new();
-        self.fonts.insert(id, asset);
-        self.current_memory_bytes += font_size;
         Ok(id)
     }
 
@@ -441,10 +531,14 @@ impl AssetManager {
             false
         }
     }
-    pub fn load_fonts<P: AsRef<Path>>(&mut self, paths: &[P]) -> AssetResult<Vec<FontId>> {
+    pub fn load_fonts<P: AsRef<Path>>(
+        &mut self,
+        paths: &[P],
+        font_size: f32,
+    ) -> AssetResult<Vec<FontId>> {
         let mut ids = Vec::with_capacity(paths.len());
         for path in paths {
-            let id = self.load_font(path)?;
+            let id = self.load_font(path, font_size)?;
             ids.push(id);
         }
         Ok(ids)

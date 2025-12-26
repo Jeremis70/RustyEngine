@@ -60,6 +60,8 @@ impl Sprite {
             scale: self.transform.scale,
             origin: self.transform.origin,
             tint: self.tint,
+            uv_min: Vec2::new(0.0, 0.0),
+            uv_max: Vec2::new(1.0, 1.0),
         }
     }
 }
@@ -96,6 +98,8 @@ impl From<Sprite> for SpriteDrawData {
             scale: sprite.transform.scale,
             origin: sprite.transform.origin,
             tint: sprite.tint,
+            uv_min: Vec2::new(0.0, 0.0),
+            uv_max: Vec2::new(1.0, 1.0),
         }
     }
 }
