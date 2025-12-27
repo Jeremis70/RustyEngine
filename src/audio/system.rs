@@ -19,28 +19,32 @@ impl AudioSystem {
         Self { backend }
     }
 
-    pub fn load<P>(&mut self, path: P) -> AudioResult<SoundId>
+    pub(crate) fn load<P>(&mut self, path: P) -> AudioResult<SoundId>
     where
         P: AsRef<Path>,
     {
         self.load_with_strategy(path, LoadStrategy::Auto)
     }
 
-    pub fn load_with_strategy<P>(&mut self, path: P, strategy: LoadStrategy) -> AudioResult<SoundId>
+    pub(crate) fn load_with_strategy<P>(
+        &mut self,
+        path: P,
+        strategy: LoadStrategy,
+    ) -> AudioResult<SoundId>
     where
         P: AsRef<Path>,
     {
         self.backend.load(path.as_ref(), strategy)
     }
 
-    pub fn load_buffered<P>(&mut self, path: P) -> AudioResult<SoundId>
+    pub(crate) fn load_buffered<P>(&mut self, path: P) -> AudioResult<SoundId>
     where
         P: AsRef<Path>,
     {
         self.load_with_strategy(path, LoadStrategy::Buffered)
     }
 
-    pub fn load_streaming<P>(&mut self, path: P) -> AudioResult<SoundId>
+    pub(crate) fn load_streaming<P>(&mut self, path: P) -> AudioResult<SoundId>
     where
         P: AsRef<Path>,
     {

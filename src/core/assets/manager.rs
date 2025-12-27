@@ -1,77 +1,20 @@
-use std::collections::HashMap;
 use std::path::Path;
 
+use crate::audio::{AudioError, AudioResult, AudioSystem, LoadStrategy, SoundId};
+
+use super::cache::{AssetStore, FontKey, ImageKey, normalize_path};
 use super::error::{AssetError, AssetResult};
 use super::font::{FontAsset, FontId, Glyph};
 use super::image::{ImageAsset, ImageId};
-
-/// Configuration for extracting sprites from a spritesheet
-pub struct SpritesheetConfig {
-    /// Number of columns in the spritesheet
-    pub columns: u32,
-    /// Number of rows in the spritesheet
-    pub rows: u32,
-    /// Width of each sprite in pixels
-    pub sprite_width: u32,
-    /// Height of each sprite in pixels
-    pub sprite_height: u32,
-    /// Order in which to extract sprites
-    pub order: SpriteOrder,
-    /// Optional spacing between sprites in pixels
-    pub spacing: u32,
-    /// Optional margin around the entire spritesheet in pixels
-    pub margin: u32,
-}
-
-/// Defines the order in which sprites are extracted from the sheet
-#[derive(Debug, Clone, Copy)]
-pub enum SpriteOrder {
-    /// Left to right, top to bottom (most common)
-    /// ```text
-    /// 1 2 3
-    /// 4 5 6
-    /// 7 8 9
-    /// ```
-    LeftToRightTopToBottom,
-
-    /// Right to left, top to bottom
-    /// ```text
-    /// 3 2 1
-    /// 6 5 4
-    /// 9 8 7
-    /// ```
-    RightToLeftTopToBottom,
-
-    /// Left to right, bottom to top
-    /// ```text
-    /// 7 8 9
-    /// 4 5 6
-    /// 1 2 3
-    /// ```
-    LeftToRightBottomToTop,
-
-    /// Zigzag: alternating left-to-right and right-to-left
-    /// ```text
-    /// 1 2 3
-    /// 6 5 4
-    /// 7 8 9
-    /// ```
-    Zigzag,
-
-    /// Top to bottom, left to right
-    /// ```text
-    /// 1 4 7
-    /// 2 5 8
-    /// 3 6 9
-    /// ```
-    TopToBottomLeftToRight,
-}
+use super::sound_tracking::{SoundAsset, SoundKey};
+use super::spritesheet::{SpritesheetConfig, calculate_sprite_positions, extract_sprite_data};
 
 /// Simple asset manager capable of loading and caching images.
 /// Tracks memory usage and supports unloading.
 pub struct AssetManager {
-    images: HashMap<ImageId, ImageAsset>,
-    fonts: HashMap<FontId, FontAsset>,
+    images: AssetStore<ImageId, ImageKey, ImageAsset>,
+    fonts: AssetStore<FontId, FontKey, FontAsset>,
+    sounds: AssetStore<SoundId, SoundKey, SoundAsset>,
     max_memory_bytes: usize,
     current_memory_bytes: usize,
 }
@@ -107,8 +50,9 @@ impl AssetManager {
     /// * `max_bytes` - Maximum memory in bytes (e.g., 512 * 1024 * 1024 for 512MB)
     pub fn with_limit(max_bytes: usize) -> Self {
         Self {
-            images: HashMap::new(),
-            fonts: HashMap::new(),
+            images: AssetStore::new(),
+            fonts: AssetStore::new(),
+            sounds: AssetStore::new(),
             max_memory_bytes: max_bytes,
             current_memory_bytes: 0,
         }
@@ -117,7 +61,15 @@ impl AssetManager {
     /// Load an image from disk and cache it under a newly generated identifier.
     /// Returns the ImageId that can be used to retrieve the image later.
     pub fn load_image<P: AsRef<Path>>(&mut self, path: P) -> AssetResult<ImageId> {
-        let path_buf = path.as_ref().to_path_buf();
+        let path_buf = normalize_path(path.as_ref());
+        let key = ImageKey {
+            path: path_buf.clone(),
+        };
+
+        if let Some(existing) = self.images.get_existing_id(&key) {
+            return Ok(existing);
+        }
+
         let dyn_img = image::open(&path_buf).map_err(|source| AssetError::Image {
             source,
             path: path_buf.clone(),
@@ -136,9 +88,109 @@ impl AssetManager {
         };
 
         let id = ImageId::new();
-        self.images.insert(id, image);
+        self.images.insert_keyed(id, key, image);
         self.current_memory_bytes += image_size;
         Ok(id)
+    }
+
+    /// Load a sound via the engine audio system.
+    ///
+    /// This is a thin orchestration helper and does not store or own audio state.
+    pub fn load_sound<P>(&mut self, audio: &mut AudioSystem, path: P) -> AudioResult<SoundId>
+    where
+        P: AsRef<Path>,
+    {
+        self.load_sound_with_strategy(audio, path, LoadStrategy::Auto)
+    }
+
+    /// Load a sound via the engine audio system, forcing a buffered strategy.
+    pub fn load_sound_buffered<P>(
+        &mut self,
+        audio: &mut AudioSystem,
+        path: P,
+    ) -> AudioResult<SoundId>
+    where
+        P: AsRef<Path>,
+    {
+        self.load_sound_with_strategy(audio, path, LoadStrategy::Buffered)
+    }
+
+    /// Load a sound via the engine audio system, forcing a streaming strategy.
+    pub fn load_sound_streaming<P>(
+        &mut self,
+        audio: &mut AudioSystem,
+        path: P,
+    ) -> AudioResult<SoundId>
+    where
+        P: AsRef<Path>,
+    {
+        self.load_sound_with_strategy(audio, path, LoadStrategy::Streaming)
+    }
+
+    fn load_sound_with_strategy<P>(
+        &mut self,
+        audio: &mut AudioSystem,
+        path: P,
+        strategy: LoadStrategy,
+    ) -> AudioResult<SoundId>
+    where
+        P: AsRef<Path>,
+    {
+        let path_buf = normalize_path(path.as_ref());
+        let key = SoundKey {
+            path: path_buf.clone(),
+            strategy,
+        };
+
+        if let Some(existing) = self.sounds.get_existing_id(&key) {
+            return Ok(existing);
+        }
+
+        let estimated_bytes = std::fs::metadata(&path_buf)
+            .map(|m| m.len() as usize)
+            .unwrap_or(0);
+
+        if let Err(err) = self.ensure_capacity_for(estimated_bytes) {
+            return Err(AudioError::Backend(err.to_string()));
+        }
+
+        let sound_id = audio.load_with_strategy(&path_buf, strategy)?;
+
+        self.sounds
+            .insert_keyed(sound_id, key, SoundAsset { estimated_bytes });
+        self.current_memory_bytes += estimated_bytes;
+        Ok(sound_id)
+    }
+
+    /// Check if a sound with the given ID exists.
+    pub fn sound_exists(&self, id: SoundId) -> bool {
+        self.sounds.contains_id(id)
+    }
+
+    /// Get the total number of loaded sounds tracked by the asset manager.
+    pub fn sound_count(&self) -> usize {
+        self.sounds.len()
+    }
+
+    /// Unload and remove a sound from the audio system and asset tracking.
+    pub fn unload_sound(&mut self, audio: &mut AudioSystem, id: SoundId) -> AudioResult<bool> {
+        let Some(entry) = self.sounds.remove(id) else {
+            return Ok(false);
+        };
+
+        self.current_memory_bytes = self
+            .current_memory_bytes
+            .saturating_sub(entry.asset.estimated_bytes);
+        audio.unload(id)?;
+        Ok(true)
+    }
+
+    /// Unload all sounds tracked by the asset manager.
+    pub fn unload_all_sounds(&mut self, audio: &mut AudioSystem) {
+        let ids: Vec<SoundId> = self.sounds.by_id.keys().copied().collect();
+        for id in ids {
+            let _ = self.unload_sound(audio, id);
+        }
     }
 
     pub fn load_spritesheet<P: AsRef<Path>>(
@@ -207,7 +259,7 @@ impl AssetManager {
         }
 
         // Calculate positions for each sprite based on order
-        let positions = Self::calculate_sprite_positions(&config);
+        let positions = calculate_sprite_positions(&config);
 
         let mut sprite_ids = Vec::with_capacity(positions.len());
 
@@ -217,7 +269,7 @@ impl AssetManager {
             let y = config.margin + row * (config.sprite_height + config.spacing);
 
             // Extract the sub-image
-            let sprite_data = Self::extract_sprite_data(
+            let sprite_data = extract_sprite_data(
                 &spritesheet,
                 x,
                 y,
@@ -238,7 +290,7 @@ impl AssetManager {
             };
 
             let id = ImageId::new();
-            self.images.insert(id, sprite);
+            self.images.insert_unkeyed(id, sprite);
             self.current_memory_bytes += image_size;
             sprite_ids.push(id);
         }
@@ -253,96 +305,26 @@ impl AssetManager {
         Ok(sprite_ids)
     }
 
-    /// Calculate the (column, row) positions for each sprite based on the order
-    fn calculate_sprite_positions(config: &SpritesheetConfig) -> Vec<(u32, u32)> {
-        let total_sprites = (config.columns * config.rows) as usize;
-        let mut positions = Vec::with_capacity(total_sprites);
-
-        match config.order {
-            SpriteOrder::LeftToRightTopToBottom => {
-                for row in 0..config.rows {
-                    for col in 0..config.columns {
-                        positions.push((col, row));
-                    }
-                }
-            }
-
-            SpriteOrder::RightToLeftTopToBottom => {
-                for row in 0..config.rows {
-                    for col in (0..config.columns).rev() {
-                        positions.push((col, row));
-                    }
-                }
-            }
-
-            SpriteOrder::LeftToRightBottomToTop => {
-                for row in (0..config.rows).rev() {
-                    for col in 0..config.columns {
-                        positions.push((col, row));
-                    }
-                }
-            }
-
-            SpriteOrder::Zigzag => {
-                for row in 0..config.rows {
-                    if row % 2 == 0 {
-                        // Even rows: left to right
-                        for col in 0..config.columns {
-                            positions.push((col, row));
-                        }
-                    } else {
-                        // Odd rows: right to left
-                        for col in (0..config.columns).rev() {
-                            positions.push((col, row));
-                        }
-                    }
-                }
-            }
-
-            SpriteOrder::TopToBottomLeftToRight => {
-                for col in 0..config.columns {
-                    for row in 0..config.rows {
-                        positions.push((col, row));
-                    }
-                }
-            }
-        }
-
-        positions
-    }
-
-    /// Extract pixel data for a single sprite from the spritesheet
-    fn extract_sprite_data(
-        spritesheet: &image::RgbaImage,
-        x: u32,
-        y: u32,
-        width: u32,
-        height: u32,
-    ) -> Vec<u8> {
-        let mut data = Vec::with_capacity((width * height * 4) as usize);
-
-        for py in y..(y + height) {
-            for px in x..(x + width) {
-                let pixel = spritesheet.get_pixel(px, py);
-                data.extend_from_slice(&pixel.0);
-            }
-        }
-
-        data
-    }
-
     pub fn load_font<P: AsRef<Path>>(&mut self, path: P, font_size: f32) -> AssetResult<FontId> {
         use crate::math::Vec2;
         use fontdue::Font;
         use std::collections::HashMap;
 
-        let path_buf = path.as_ref().to_path_buf();
+        let path_buf = normalize_path(path.as_ref());
+        let key = FontKey::new(path_buf.clone(), font_size);
+
+        if let Some(existing) = self.fonts.get_existing_id(&key) {
+            return Ok(existing);
+        }
 
         // Read font data from disk
         let data = std::fs::read(&path_buf).map_err(|source| AssetError::Io {
             source,
             path: path_buf.clone(),
         })?;
+
+        let font_data_size = data.len();
+        self.ensure_capacity_for(font_data_size)?;
 
         // Load the font using fontdue
         let font = Font::from_bytes(data.clone(), fontdue::FontSettings::default())
@@ -453,7 +435,8 @@ impl AssetManager {
         };
 
         let id = FontId::new();
-        self.fonts.insert(id, font_asset);
+        self.fonts.insert_keyed(id, key, font_asset);
+        self.current_memory_bytes += font_data_size;
 
         log::info!("Loaded font {:?} ({}px)", path_buf, font_size);
 
@@ -466,14 +449,14 @@ impl AssetManager {
         self.ensure_capacity_for(image_size)?;
 
         let id = ImageId::new();
-        self.images.insert(id, asset);
+        self.images.insert_unkeyed(id, asset);
         self.current_memory_bytes += image_size;
         Ok(id)
     }
 
     /// Check if an image with the given ID exists
     pub fn image_exists(&self, id: ImageId) -> bool {
-        self.images.contains_key(&id)
+        self.images.contains_id(id)
     }
     /// Get the total number of loaded images
     pub fn image_count(&self) -> usize {
@@ -482,12 +465,12 @@ impl AssetManager {
 
     /// Retrieve a previously loaded image by its identifier.
     pub fn get_image(&self, id: ImageId) -> Option<&ImageAsset> {
-        self.images.get(&id)
+        self.images.by_id.get(&id).map(|entry| &entry.asset)
     }
 
     /// Check if a font with the given ID exists
     pub fn font_exists(&self, id: FontId) -> bool {
-        self.fonts.contains_key(&id)
+        self.fonts.contains_id(id)
     }
 
     /// Get the total number of loaded fonts
@@ -497,14 +480,14 @@ impl AssetManager {
 
     /// Retrieve a previously loaded font by its identifier.
     pub fn get_font(&self, id: FontId) -> Option<&FontAsset> {
-        self.fonts.get(&id)
+        self.fonts.by_id.get(&id).map(|entry| &entry.asset)
     }
 
     /// Unload and remove an image from memory
     /// Returns true if the image was found and unloaded, false otherwise
     pub fn unload_image(&mut self, id: ImageId) -> bool {
-        if let Some(image) = self.images.remove(&id) {
-            self.current_memory_bytes -= image.data.len();
+        if let Some(entry) = self.images.remove(id) {
+            self.current_memory_bytes -= entry.asset.data.len();
             log::debug!(
                 "Unloaded image {:?}, memory now: {}",
                 id,
@@ -519,8 +502,8 @@ impl AssetManager {
     /// Unload and remove a font from memory
     /// Returns true if the font was found and unloaded, false otherwise
     pub fn unload_font(&mut self, id: FontId) -> bool {
-        if let Some(font) = self.fonts.remove(&id) {
-            self.current_memory_bytes -= font.data.len();
+        if let Some(entry) = self.fonts.remove(id) {
+            self.current_memory_bytes -= entry.asset.data.len();
             log::debug!(
                 "Unloaded font {:?}, memory now: {}",
                 id,
@@ -569,7 +552,12 @@ impl AssetManager {
     }
 
     pub fn unload_all_fonts(&mut self) {
-        let freed: usize = self.fonts.values().map(|font| font.data.len()).sum();
+        let freed: usize = self
+            .fonts
+            .by_id
+            .values()
+            .map(|entry| entry.asset.data.len())
+            .sum();
         self.fonts.clear();
         self.current_memory_bytes = self.current_memory_bytes.saturating_sub(freed);
         log::debug!(
@@ -579,7 +567,12 @@ impl AssetManager {
     }
 
     pub fn unload_all_images(&mut self) {
-        let freed: usize = self.images.values().map(|image| image.data.len()).sum();
+        let freed: usize = self
+            .images
+            .by_id
+            .values()
+            .map(|entry| entry.asset.data.len())
+            .sum();
         self.images.clear();
         self.current_memory_bytes = self.current_memory_bytes.saturating_sub(freed);
         log::debug!(
@@ -588,10 +581,13 @@ impl AssetManager {
         );
     }
 
-    /// Unload all assets from memory
-    pub fn unload_all(&mut self) {
-        self.images.clear();
-        self.fonts.clear();
+    /// Unload all assets from memory.
+    ///
+    /// Sounds require access to the audio system for unloading.
+    pub fn unload_all(&mut self, audio: &mut AudioSystem) {
+        self.unload_all_sounds(audio);
+        self.unload_all_images();
+        self.unload_all_fonts();
         self.current_memory_bytes = 0;
         log::debug!(
             "Unloaded all assets, memory now: {}",
@@ -606,22 +602,45 @@ impl AssetManager {
 
     /// Get memory usage for images only (sum of raw pixel buffers).
     pub fn images_memory_usage_bytes(&self) -> usize {
-        self.images.values().map(|image| image.data.len()).sum()
+        self.images
+            .by_id
+            .values()
+            .map(|entry| entry.asset.data.len())
+            .sum()
     }
 
     /// Get memory usage for fonts only (sum of raw font buffers).
     pub fn fonts_memory_usage_bytes(&self) -> usize {
-        self.fonts.values().map(|font| font.data.len()).sum()
+        self.fonts
+            .by_id
+            .values()
+            .map(|entry| entry.asset.data.len())
+            .sum()
+    }
+
+    /// Get memory usage for sounds (best-effort estimate; currently based on file size).
+    pub fn sounds_memory_usage_bytes(&self) -> usize {
+        self.sounds
+            .by_id
+            .values()
+            .map(|entry| entry.asset.estimated_bytes)
+            .sum()
     }
 
     /// Get memory usage for a specific image.
     pub fn image_memory_usage_bytes(&self, id: ImageId) -> Option<usize> {
-        self.images.get(&id).map(|image| image.data.len())
+        self.images
+            .by_id
+            .get(&id)
+            .map(|entry| entry.asset.data.len())
     }
 
     /// Get memory usage for a specific font.
     pub fn font_memory_usage_bytes(&self, id: FontId) -> Option<usize> {
-        self.fonts.get(&id).map(|font| font.data.len())
+        self.fonts
+            .by_id
+            .get(&id)
+            .map(|entry| entry.asset.data.len())
     }
 
     /// Get memory limit in bytes
@@ -640,12 +659,18 @@ impl AssetManager {
 
     /// Iterate over all loaded images.
     pub fn iter_images(&self) -> impl Iterator<Item = (ImageId, &ImageAsset)> {
-        self.images.iter().map(|(&id, asset)| (id, asset))
+        self.images
+            .by_id
+            .iter()
+            .map(|(&id, entry)| (id, &entry.asset))
     }
 
     /// Iterate over all loaded fonts.
     pub fn iter_fonts(&self) -> impl Iterator<Item = (FontId, &FontAsset)> {
-        self.fonts.iter().map(|(&id, asset)| (id, asset))
+        self.fonts
+            .by_id
+            .iter()
+            .map(|(&id, entry)| (id, &entry.asset))
     }
 }
 impl Default for AssetManager {

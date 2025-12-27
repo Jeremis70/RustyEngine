@@ -1,3 +1,4 @@
+pub mod asset_cache;
 pub mod font;
 pub mod showcase;
 pub mod sprite;

@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use log::{info, warn};
 
-use crate::audio::{AudioResult, AudioSystem};
+use crate::audio::AudioResult;
 use crate::core::engine::Engine;
 use crate::core::engine_state::EngineState;
 use crate::core::events::Position;
@@ -44,20 +44,20 @@ pub fn install(engine: &mut Engine) {
         });
     }
 
-    if let Err(err) = install_audio(&mut engine.audio) {
+    if let Err(err) = install_audio(engine) {
         warn!("Impossible de lancer la musique: {err}");
     }
 }
 
-fn install_audio(audio: &mut AudioSystem) -> AudioResult<()> {
+fn install_audio(engine: &mut Engine) -> AudioResult<()> {
     let path = asset_path(MUSIC_TRACK);
     if !path.exists() {
         warn!("Fichier audio introuvable: {}", path.display());
         return Ok(());
     }
 
-    let sound = audio.load(&path)?;
-    audio.play(sound)
+    let sound = engine.assets.load_sound(&mut engine.audio, &path)?;
+    engine.audio.play(sound)
 }
 
 fn asset_path(relative: &str) -> std::path::PathBuf {

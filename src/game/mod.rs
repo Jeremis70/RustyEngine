@@ -1,7 +1,6 @@
 pub mod demos;
 
-/// Changez cette constante pour lancer une démo différente.
-const ACTIVE_DEMO: DemoSelector = DemoSelector::Font;
+const ACTIVE_DEMO: DemoSelector = DemoSelector::AssetCache;
 
 #[derive(Clone, Copy)]
 enum DemoSelector {
@@ -9,6 +8,7 @@ enum DemoSelector {
     Template,
     Sprite,
     Font,
+    AssetCache,
 }
 
 pub fn install_active_demo(engine: &mut crate::core::engine::Engine) {
@@ -17,9 +17,10 @@ pub fn install_active_demo(engine: &mut crate::core::engine::Engine) {
         DemoSelector::Template => demos::template::install(engine),
         DemoSelector::Sprite => demos::sprite::install(engine),
         DemoSelector::Font => demos::font::install(engine),
+        DemoSelector::AssetCache => demos::asset_cache::install(engine),
     }
 }
 
-pub fn list_available() -> [&'static str; 4] {
-    ["Showcase", "Template", "Font", "Sprite"]
+pub fn list_available() -> [&'static str; 5] {
+    ["Showcase", "Template", "Font", "Sprite", "AssetCache"]
 }

@@ -5,7 +5,7 @@ use super::error::AudioResult;
 use super::sound::SoundId;
 use super::sound_group::SoundGroup;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum LoadStrategy {
     Auto,
     Buffered,
