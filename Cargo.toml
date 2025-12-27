@@ -2,6 +2,14 @@
 name = "RustyEngine"
 version = "0.1.0"
 edition = "2024"
+homepage = "https://github.com/Jeremis70/RustyEngine"
+repository = "https://github.com/Jeremis70/RustyEngine"
+authors = ["Jérémie Caron"]
+readme = "README.md"
+license = "LGPL-3.0-or-later"
+description = "A high-level, Rust-based game engine with a flexible renderer, audio system, and asset management, designed for power users."
+keywords = ["game-engine", "gamedev", "wgpu", "winit", "audio"]
+categories = ["game-development", "graphics"]
 
 [dependencies]
 wgpu = "27.0.1"

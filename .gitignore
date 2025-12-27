@@ -2,6 +2,8 @@
 *.md
 !README.md
 
+Cargo.lock
+
 # VSCode - exclude everything except specific files
 .vscode/*
 !.vscode/tasks.json
