@@ -83,21 +83,6 @@ impl RodioBackend {
         self.streaming_threshold = threshold;
     }
 
-    fn normalize_path(path: &Path) -> AudioResult<PathBuf> {
-        let absolute_path = if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            std::env::current_dir()
-                .map_err(AudioError::CurrentDirectory)?
-                .join(path)
-        };
-
-        std::fs::canonicalize(&absolute_path).map_err(|source| AudioError::PathNormalization {
-            path: absolute_path.clone(),
-            source,
-        })
-    }
-
     fn choose_strategy(&self, path: &Path, strategy: LoadStrategy) -> AudioResult<LoadStrategy> {
         match strategy {
             LoadStrategy::Auto => {
@@ -183,20 +168,20 @@ impl RodioBackend {
 
 impl AudioBackend for RodioBackend {
     fn load(&mut self, path: &Path, strategy: LoadStrategy) -> AudioResult<SoundId> {
-        let normalized_path = Self::normalize_path(path)?;
-        let effective_strategy = self.choose_strategy(&normalized_path, strategy)?;
+        let path = path.to_path_buf();
+        let effective_strategy = self.choose_strategy(&path, strategy)?;
 
         let id = SoundId::new();
         let entry = match effective_strategy {
             LoadStrategy::Auto => unreachable!("auto strategy must be resolved before loading"),
             LoadStrategy::Buffered => {
-                let file = File::open(&normalized_path).map_err(|source| AudioError::FileOpen {
-                    path: normalized_path.clone(),
+                let file = File::open(&path).map_err(|source| AudioError::FileOpen {
+                    path: path.clone(),
                     source,
                 })?;
                 let reader = BufReader::new(file);
                 let decoder = rodio::Decoder::new(reader).map_err(|source| AudioError::Decode {
-                    path: normalized_path.clone(),
+                    path: path.clone(),
                     source,
                 })?;
                 let duration = decoder.total_duration();
@@ -211,23 +196,23 @@ impl AudioBackend for RodioBackend {
                 }
             }
             LoadStrategy::Streaming => {
-                let file = File::open(&normalized_path).map_err(|source| AudioError::FileOpen {
-                    path: normalized_path.clone(),
+                let file = File::open(&path).map_err(|source| AudioError::FileOpen {
+                    path: path.clone(),
                     source,
                 })?;
                 let verify = file.try_clone().map_err(|source| AudioError::FileClone {
-                    path: normalized_path.clone(),
+                    path: path.clone(),
                     source,
                 })?;
                 let reader = BufReader::new(verify);
                 let decoder = rodio::Decoder::new(reader).map_err(|source| AudioError::Decode {
-                    path: normalized_path.clone(),
+                    path: path.clone(),
                     source,
                 })?;
                 let duration = decoder.total_duration();
                 SoundEntry {
                     data: AudioData::Streaming(StreamingAudio {
-                        path: normalized_path.clone(),
+                        path: path.clone(),
                         file: Arc::new(file),
                     }),
                     duration,

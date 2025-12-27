@@ -8,5 +8,6 @@ pub mod sound_tracking;
 pub mod spritesheet;
 
 pub use image::{ImageAsset, ImageId};
-pub use manager::AssetManager;
+#[allow(unused_imports)]
+pub use manager::{AssetManager, AssetPathPolicy};
 pub use spritesheet::{SpriteOrder, SpritesheetConfig};

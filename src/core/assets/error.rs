@@ -30,4 +30,11 @@ pub enum AssetError {
 
     #[error("Out of memory")]
     OutOfMemory,
+
+    #[error("asset path {input:?} is outside asset_root {asset_root:?}: {reason}")]
+    InvalidAssetPath {
+        input: PathBuf,
+        asset_root: PathBuf,
+        reason: String,
+    },
 }

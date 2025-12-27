@@ -1,4 +1,9 @@
+use crate::math::Vec2;
+
+use super::image::ImageId;
+
 /// Configuration for extracting sprites from a spritesheet
+#[derive(Debug, Clone, Copy)]
 pub struct SpritesheetConfig {
     /// Number of columns in the spritesheet
     pub columns: u32,
@@ -58,6 +63,30 @@ pub enum SpriteOrder {
     /// 3 6 9
     /// ```
     TopToBottomLeftToRight,
+}
+
+/// A single sprite's region in a spritesheet.
+///
+/// - `x`, `y`, `width`, `height` are pixel coordinates in the source image.
+/// - `uv_min`, `uv_max` are normalized 0..1 texture coordinates.
+#[derive(Debug, Clone, Copy)]
+pub struct SpriteRegion {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+    pub uv_min: Vec2,
+    pub uv_max: Vec2,
+}
+
+/// Spritesheet represented as a single texture plus per-sprite UV regions.
+///
+/// This is the GPU-friendly representation; you can still split it into
+/// per-sprite `ImageId`s via `AssetManager` when needed.
+#[derive(Debug, Clone)]
+pub struct SpritesheetAtlas {
+    pub image: ImageId,
+    pub regions: Vec<SpriteRegion>,
 }
 
 /// Calculate the (column, row) positions for each sprite based on the order.

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::path::{Path, PathBuf};
 
 /// Entry stored in an `AssetStore`.
 ///
@@ -82,24 +81,20 @@ where
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct ImageKey {
-    pub(crate) path: PathBuf,
+    pub(crate) path: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct FontKey {
-    pub(crate) path: PathBuf,
+    pub(crate) path: String,
     pub(crate) size_bits: u32,
 }
 
 impl FontKey {
-    pub(crate) fn new(path: PathBuf, font_size: f32) -> Self {
+    pub(crate) fn new(path: String, font_size: f32) -> Self {
         Self {
             path,
             size_bits: font_size.to_bits(),
         }
     }
-}
-
-pub(crate) fn normalize_path(path: &Path) -> PathBuf {
-    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }

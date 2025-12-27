@@ -7,14 +7,6 @@ use super::sound::SoundId;
 pub enum AudioError {
     #[error("audio output device unavailable: {0}")]
     OutputUnavailable(#[from] rodio::StreamError),
-    #[error("failed to resolve current directory: {0}")]
-    CurrentDirectory(#[source] std::io::Error),
-    #[error("failed to normalize audio file path {path:?}: {source}")]
-    PathNormalization {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
     #[error("failed to open audio file {path:?}: {source}")]
     FileOpen {
         path: PathBuf,

@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::{core::assets::ImageId, math::vec2::Vec2};
+use crate::math::Vec2;
+
+use super::image::ImageId;
 
 use super::id::AssetId;
 

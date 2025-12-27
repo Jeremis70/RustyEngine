@@ -1,10 +1,8 @@
-use std::path::PathBuf;
-
 use crate::audio::LoadStrategy;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct SoundKey {
-    pub(crate) path: PathBuf,
+    pub(crate) path: String,
     pub(crate) strategy: LoadStrategy,
 }
 

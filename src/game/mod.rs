@@ -1,6 +1,6 @@
 pub mod demos;
 
-const ACTIVE_DEMO: DemoSelector = DemoSelector::AssetCache;
+const ACTIVE_DEMO: DemoSelector = DemoSelector::Sprite;
 
 #[derive(Clone, Copy)]
 enum DemoSelector {
