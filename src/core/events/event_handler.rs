@@ -1,4 +1,4 @@
-use super::callbacks::{Callbacks, CallbacksMut};
+use super::callbacks::{Callbacks, Mut, Ref2};
 use super::input::Input;
 use super::input_events::{
     AxisMotionEvent, GestureEvent, ImeEvent, Key, KeyEvent, Modifiers, MouseButtonEvent,
@@ -7,7 +7,6 @@ use super::input_events::{
 use crate::backend::surface_provider::SurfaceProvider;
 use crate::core::engine_state::EngineState;
 use crate::render::context::RenderContext;
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Trait used by the backend to invoke events.
@@ -59,12 +58,17 @@ pub trait EventHandlerApi {
 
 /// Orchestrates user callbacks and input state.
 ///
-/// Per-frame ordering:
-/// - `on_update` is invoked first. Before calling user handlers, per-frame input
-///   state is cleared (just_pressed/released, mouse delta) and `EngineState` has
-///   been updated with the latest timing.
-/// - `on_redraw` is invoked after `on_update` to perform rendering. Keep game
-///   logic out of `on_redraw` and prefer rendering only.
+/// Public contract:
+/// - Gameplay reads input via polling during `on_update` (pygame-like).
+/// - Event callbacks (on_key_pressed/on_mouse_move/...) remain available, but are
+///   optional and should not be required for typical gameplay logic.
+///
+/// Per-frame ordering (conceptual):
+/// - One-frame input state (just_pressed/just_released/mouse_delta) is cleared at
+///   the end of the frame.
+/// - The next frame collects OS events into one-frame state.
+/// - `on_update` runs and gameplay polls input.
+/// - `on_redraw` runs after `on_update` (rendering only).
 pub struct EventHandler {
     // === WINDOW ===
     on_resize: Callbacks<Size>,
@@ -113,16 +117,15 @@ pub struct EventHandler {
 
     // === GAME LOOP ===
     pub on_redraw: Callbacks<()>,
-    on_update: Callbacks<EngineState>,
+    on_update: Callbacks<(EngineState, Input), Ref2>,
 
     // === RENDER CONTEXT CALLBACKS ===
-    pub on_render: CallbacksMut<RenderContext>,
+    pub on_render: Callbacks<RenderContext, Mut>,
 
     // === INPUT SNAPSHOT ===
     pub on_keys_state_changed: Callbacks<Vec<Key>>,
 
     // === INTERNAL STATE ===
-    pressed_keys: HashSet<Key>,
     current_modifiers: Modifiers,
     pub input: Input,
 }
@@ -161,9 +164,8 @@ impl EventHandler {
             on_activation_token: Callbacks::new(),
             on_redraw: Callbacks::new(),
             on_update: Callbacks::new(),
-            on_render: CallbacksMut::new(),
+            on_render: Callbacks::new(),
             on_keys_state_changed: Callbacks::new(),
-            pressed_keys: HashSet::new(),
             current_modifiers: Modifiers::default(),
             input: Input::new(),
         }
@@ -171,11 +173,11 @@ impl EventHandler {
 
     // === STATE QUERIES ===
     pub fn is_key_pressed(&self, key: Key) -> bool {
-        self.pressed_keys.contains(&key)
+        self.input.key(key)
     }
 
     pub fn pressed_keys(&self) -> impl Iterator<Item = &Key> {
-        self.pressed_keys.iter()
+        self.input.pressed_keys_iter()
     }
 
     pub fn modifiers(&self) -> Modifiers {
@@ -220,7 +222,16 @@ impl EventHandler {
     pub fn on_render<F: FnMut(&mut RenderContext) + 'static>(&mut self, f: F) -> usize {
         self.on_render.add(f)
     }
-    pub fn on_update<F: FnMut(&EngineState) + 'static>(&mut self, f: F) -> usize {
+    /// Primary gameplay hook: update logic (poll input here).
+    pub fn on_update<F: FnMut(&EngineState) + 'static>(&mut self, mut f: F) -> usize {
+        self.on_update.add(move |state, _input| f(state))
+    }
+
+    /// Variant that also provides read-only access to Input for polling.
+    pub fn on_update_with_input<F: FnMut(&EngineState, &Input) + 'static>(
+        &mut self,
+        f: F,
+    ) -> usize {
         self.on_update.add(f)
     }
     pub fn on_keys_state_changed<F: FnMut(&Vec<Key>) + 'static>(&mut self, f: F) -> usize {
@@ -332,21 +343,17 @@ impl EventHandlerApi for EventHandler {
     }
 
     fn on_key_pressed(&mut self, ev: &KeyEvent) {
-        self.pressed_keys.insert(ev.key);
         self.input.on_key_pressed(ev.key);
         self.on_key_pressed.invoke(ev);
-        let mut snapshot: Vec<Key> = self.pressed_keys.iter().cloned().collect();
-        snapshot.sort_by_key(|k| *k as u32);
-        self.on_keys_state_changed.invoke(&snapshot);
+        self.on_keys_state_changed
+            .invoke(&self.input.pressed_keys_list());
     }
 
     fn on_key_released(&mut self, ev: &KeyEvent) {
-        self.pressed_keys.remove(&ev.key);
         self.input.on_key_released(ev.key);
         self.on_key_released.invoke(ev);
-        let mut snapshot: Vec<Key> = self.pressed_keys.iter().cloned().collect();
-        snapshot.sort_by_key(|k| *k as u32);
-        self.on_keys_state_changed.invoke(&snapshot);
+        self.on_keys_state_changed
+            .invoke(&self.input.pressed_keys_list());
     }
 
     fn on_modifiers_changed(&mut self, mods: &Modifiers) {
@@ -437,10 +444,13 @@ impl EventHandlerApi for EventHandler {
         log::trace!("render: end");
     }
     fn on_update(&mut self, state: &EngineState) {
-        // Frame begin: clear per-frame input state then invoke callbacks
+        // Note: per-frame input state (just_pressed/just_released/mouse_delta) is
+        // cleared after rendering (end of frame) so polling in on_update sees the
+        // events collected since the last frame.
         log::trace!("update: begin");
-        self.input.clear_frame_state();
-        self.on_update.invoke(state);
+        // Derive action states from current raw input before gameplay polls.
+        self.input.update_actions();
+        self.on_update.invoke(state, &self.input);
         log::trace!("update: end");
     }
 }

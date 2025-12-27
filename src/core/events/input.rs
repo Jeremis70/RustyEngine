@@ -1,5 +1,7 @@
+use super::actions::{ActionId, ActionMap, InputSnapshot};
 use super::input_events::{Key, Modifiers, MouseButton, Position};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
 pub struct Input {
@@ -7,14 +9,21 @@ pub struct Input {
     pressed_keys: HashSet<Key>,
     just_pressed_keys: HashSet<Key>,
     just_released_keys: HashSet<Key>,
+    last_key_pressed_instant: HashMap<Key, Instant>,
+    last_key_released_instant: HashMap<Key, Instant>,
     modifiers: Modifiers,
 
     // Mouse
     pressed_buttons: HashSet<MouseButton>,
     just_pressed_buttons: HashSet<MouseButton>,
     just_released_buttons: HashSet<MouseButton>,
+    last_button_pressed_instant: HashMap<MouseButton, Instant>,
+    last_button_released_instant: HashMap<MouseButton, Instant>,
     mouse_position: Position,
     mouse_delta: (f32, f32),
+
+    // Actions (derived input)
+    actions: ActionMap,
 }
 
 impl Input {
@@ -23,20 +32,55 @@ impl Input {
             pressed_keys: HashSet::new(),
             just_pressed_keys: HashSet::new(),
             just_released_keys: HashSet::new(),
+            last_key_pressed_instant: HashMap::new(),
+            last_key_released_instant: HashMap::new(),
             modifiers: Modifiers::default(),
             pressed_buttons: HashSet::new(),
             just_pressed_buttons: HashSet::new(),
             just_released_buttons: HashSet::new(),
+            last_button_pressed_instant: HashMap::new(),
+            last_button_released_instant: HashMap::new(),
             mouse_position: Position { x: 0.0, y: 0.0 },
             mouse_delta: (0.0, 0.0),
+
+            actions: ActionMap::new(),
         }
     }
 
     // === FRAME STATE MANAGEMENT ===
 
-    /// Called at START of each frame - clears one-frame states
+    /// Clears one-frame states.
+    ///
+    /// Note: the engine calls this at frame end so polling in `on_update` can
+    /// safely observe events collected for the current frame.
     pub fn frame_reset(&mut self) {
         self.clear_frame_state();
+    }
+
+    /// Access the action map (read-only) for polling.
+    pub fn actions(&self) -> &ActionMap {
+        &self.actions
+    }
+
+    /// Access the action map mutably for configuring bindings.
+    pub fn actions_mut(&mut self) -> &mut ActionMap {
+        &mut self.actions
+    }
+
+    pub fn action_down(&self, id: ActionId) -> bool {
+        self.actions.down(id)
+    }
+
+    pub fn action_just_pressed(&self, id: ActionId) -> bool {
+        self.actions.just_pressed(id)
+    }
+
+    pub fn action_just_released(&self, id: ActionId) -> bool {
+        self.actions.just_released(id)
+    }
+
+    pub fn action_was_pressed_within(&self, id: ActionId, within: Duration) -> bool {
+        self.actions.was_pressed_within(id, within)
     }
 
     /// Check if key is held DOWN (including this frame)
@@ -66,6 +110,11 @@ impl Input {
         self.pressed_keys.contains(&key)
     }
 
+    /// Iterator over currently pressed keys (source of truth).
+    pub fn pressed_keys_iter(&self) -> impl Iterator<Item = &Key> {
+        self.pressed_keys.iter()
+    }
+
     /// Key pressed THIS frame
     pub fn key_just_pressed(&self, key: Key) -> bool {
         self.just_pressed_keys.contains(&key)
@@ -90,6 +139,34 @@ impl Input {
 
     pub fn mouse_button(&self, button: MouseButton) -> bool {
         self.pressed_buttons.contains(&button)
+    }
+
+    /// True if the key was pressed within the provided duration (buffering primitive).
+    pub fn key_was_pressed_within(&self, key: Key, within: Duration) -> bool {
+        self.last_key_pressed_instant
+            .get(&key)
+            .is_some_and(|t| t.elapsed() <= within)
+    }
+
+    /// True if the key was released within the provided duration.
+    pub fn key_was_released_within(&self, key: Key, within: Duration) -> bool {
+        self.last_key_released_instant
+            .get(&key)
+            .is_some_and(|t| t.elapsed() <= within)
+    }
+
+    /// True if the mouse button was pressed within the provided duration.
+    pub fn mouse_button_was_pressed_within(&self, button: MouseButton, within: Duration) -> bool {
+        self.last_button_pressed_instant
+            .get(&button)
+            .is_some_and(|t| t.elapsed() <= within)
+    }
+
+    /// True if the mouse button was released within the provided duration.
+    pub fn mouse_button_was_released_within(&self, button: MouseButton, within: Duration) -> bool {
+        self.last_button_released_instant
+            .get(&button)
+            .is_some_and(|t| t.elapsed() <= within)
     }
 
     pub fn mouse_position(&self) -> Position {
@@ -163,15 +240,26 @@ impl Input {
         self.mouse_delta = (0.0, 0.0);
     }
 
+    pub(crate) fn update_actions(&mut self) {
+        // Borrow raw state first, then update actions (disjoint field borrow).
+        let snapshot = InputSnapshot {
+            pressed_keys: &self.pressed_keys,
+            pressed_buttons: &self.pressed_buttons,
+        };
+        self.actions.update(&snapshot);
+    }
+
     pub(crate) fn on_key_pressed(&mut self, key: Key) {
         if self.pressed_keys.insert(key) {
             self.just_pressed_keys.insert(key);
+            self.last_key_pressed_instant.insert(key, Instant::now());
         }
     }
 
     pub(crate) fn on_key_released(&mut self, key: Key) {
         self.pressed_keys.remove(&key);
         self.just_released_keys.insert(key);
+        self.last_key_released_instant.insert(key, Instant::now());
     }
 
     pub(crate) fn on_modifiers_changed(&mut self, mods: Modifiers) {
@@ -181,12 +269,16 @@ impl Input {
     pub(crate) fn on_mouse_button_pressed(&mut self, button: MouseButton) {
         if self.pressed_buttons.insert(button) {
             self.just_pressed_buttons.insert(button);
+            self.last_button_pressed_instant
+                .insert(button, Instant::now());
         }
     }
 
     pub(crate) fn on_mouse_button_released(&mut self, button: MouseButton) {
         self.pressed_buttons.remove(&button);
         self.just_released_buttons.insert(button);
+        self.last_button_released_instant
+            .insert(button, Instant::now());
     }
 
     pub(crate) fn on_mouse_move(&mut self, pos: Position, last_pos: Position) {

@@ -1,22 +1,62 @@
-/// Type alias for a boxed callback function.
-type Callback<T> = Box<dyn FnMut(&T)>;
-/// Type alias for a boxed callback that needs mutable access.
-type MutCallback<T> = Box<dyn FnMut(&mut T)>;
+use std::marker::PhantomData;
 
-/// A struct that manages a list of callback functions.
-pub struct Callbacks<T> {
-    callbacks: Vec<(usize, Callback<T>)>,
-    next_id: usize,
+/// Callback mode: `Callbacks<T>` defaults to by-ref callbacks (`FnMut(&T)`).
+pub struct Ref;
+/// Callback mode for mutable callbacks (`FnMut(&mut T)`).
+pub struct Mut;
+/// Callback mode for 2-arguments callbacks (`FnMut(&A, &B)`), used as `Callbacks<(A, B), Ref2>`.
+pub struct Ref2;
+
+pub trait CallbackMode<T> {
+    type Callback: ?Sized;
 }
 
-impl<T> Callbacks<T> {
+impl<T> CallbackMode<T> for Ref {
+    type Callback = dyn FnMut(&T);
+}
+
+impl<T> CallbackMode<T> for Mut {
+    type Callback = dyn FnMut(&mut T);
+}
+
+impl<A, B> CallbackMode<(A, B)> for Ref2 {
+    type Callback = dyn FnMut(&A, &B);
+}
+
+/// A single, centered callback list type.
+///
+/// - `Callbacks<T>` stores `FnMut(&T)` callbacks.
+/// - `Callbacks<T, Mut>` stores `FnMut(&mut T)` callbacks.
+/// - `Callbacks<(A, B), Ref2>` stores `FnMut(&A, &B)` callbacks.
+pub struct Callbacks<T, Mode = Ref>
+where
+    Mode: CallbackMode<T>,
+{
+    callbacks: Vec<(usize, Box<Mode::Callback>)>,
+    next_id: usize,
+    _phantom: PhantomData<T>,
+}
+
+impl<T, Mode> Callbacks<T, Mode>
+where
+    Mode: CallbackMode<T>,
+{
     pub fn new() -> Self {
         Self {
             callbacks: Vec::new(),
             next_id: 0,
+            _phantom: PhantomData,
         }
     }
 
+    pub fn remove(&mut self, id: usize) -> bool {
+        let len_before = self.callbacks.len();
+        self.callbacks.retain(|(cb_id, _)| *cb_id != id);
+        self.callbacks.len() != len_before
+    }
+}
+
+impl<T> Callbacks<T, Ref> {
     pub fn add<F>(&mut self, f: F) -> usize
     where
         F: FnMut(&T) + 'static,
@@ -27,12 +67,6 @@ impl<T> Callbacks<T> {
         id
     }
 
-    pub fn remove(&mut self, id: usize) -> bool {
-        let len_before = self.callbacks.len();
-        self.callbacks.retain(|(cb_id, _)| *cb_id != id);
-        self.callbacks.len() != len_before
-    }
-
     pub fn invoke(&mut self, arg: &T) {
         for (_, callback) in &mut self.callbacks {
             callback(arg);
@@ -40,7 +74,7 @@ impl<T> Callbacks<T> {
     }
 }
 
-impl<T, F> std::ops::AddAssign<F> for Callbacks<T>
+impl<T, F> std::ops::AddAssign<F> for Callbacks<T, Ref>
 where
     F: FnMut(&T) + 'static,
 {
@@ -49,20 +83,7 @@ where
     }
 }
 
-/// A struct that manages callbacks requiring mutable access to their argument.
-pub struct CallbacksMut<T> {
-    callbacks: Vec<(usize, MutCallback<T>)>,
-    next_id: usize,
-}
-
-impl<T> CallbacksMut<T> {
-    pub fn new() -> Self {
-        Self {
-            callbacks: Vec::new(),
-            next_id: 0,
-        }
-    }
-
+impl<T> Callbacks<T, Mut> {
     pub fn add<F>(&mut self, f: F) -> usize
     where
         F: FnMut(&mut T) + 'static,
@@ -73,12 +94,6 @@ impl<T> CallbacksMut<T> {
         id
     }
 
-    pub fn remove(&mut self, id: usize) -> bool {
-        let len_before = self.callbacks.len();
-        self.callbacks.retain(|(cb_id, _)| *cb_id != id);
-        self.callbacks.len() != len_before
-    }
-
     pub fn invoke(&mut self, arg: &mut T) {
         for (_, callback) in &mut self.callbacks {
             callback(arg);
@@ -86,9 +101,36 @@ impl<T> CallbacksMut<T> {
     }
 }
 
-impl<T, F> std::ops::AddAssign<F> for CallbacksMut<T>
+impl<T, F> std::ops::AddAssign<F> for Callbacks<T, Mut>
 where
     F: FnMut(&mut T) + 'static,
+{
+    fn add_assign(&mut self, rhs: F) {
+        self.add(rhs);
+    }
+}
+
+impl<A, B> Callbacks<(A, B), Ref2> {
+    pub fn add<F>(&mut self, f: F) -> usize
+    where
+        F: FnMut(&A, &B) + 'static,
+    {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.callbacks.push((id, Box::new(f)));
+        id
+    }
+
+    pub fn invoke(&mut self, a: &A, b: &B) {
+        for (_, callback) in &mut self.callbacks {
+            callback(a, b);
+        }
+    }
+}
+
+impl<A, B, F> std::ops::AddAssign<F> for Callbacks<(A, B), Ref2>
+where
+    F: FnMut(&A, &B) + 'static,
 {
     fn add_assign(&mut self, rhs: F) {
         self.add(rhs);

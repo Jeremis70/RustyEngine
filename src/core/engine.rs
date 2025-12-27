@@ -225,6 +225,9 @@ impl Engine {
                 if self.initialized {
                     let _ = self.renderer.present();
                 }
+
+                // Frame end: clear one-frame input states after user update/render have run.
+                self.events.input.clear_frame_state();
             }
         }
 

@@ -1,3 +1,4 @@
+pub mod actions_demo;
 pub mod asset_cache;
 pub mod font;
 pub mod showcase;
