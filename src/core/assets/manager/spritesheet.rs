@@ -41,7 +41,7 @@ impl AssetManager {
     ) -> AssetResult<SpritesheetAtlas> {
         let info = self.compute_path_info(path.as_ref());
         self.enforce_path_policy(path.as_ref(), &info)?;
-        let path_buf = info.io_path;
+        let path_buf = info.io_path.clone();
 
         if config.columns == 0
             || config.rows == 0
@@ -56,7 +56,7 @@ impl AssetManager {
         }
 
         // Load or reuse the full spritesheet image.
-        let sheet_id = self.load_image(&path_buf)?;
+        let sheet_id = self.load_image_from_path_info(&info)?;
         let sheet = self
             .get_image(sheet_id)
             .ok_or_else(|| AssetError::InvalidSpritesheet {

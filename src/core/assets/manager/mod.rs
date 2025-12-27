@@ -51,7 +51,7 @@ impl AssetManager {
             AssetPathPolicy::AllowAndWarn => {
                 let reason = info.reason.unwrap_or("path is not portable");
                 log::warn!(
-                    "Asset path {:?} is outside asset_root {:?} ({reason}); loading is allowed but may be unsafe/non-portable",
+                    "Asset path {:?} is not portable relative to asset_root {:?} ({reason}); loading is allowed but may be unsafe/non-portable",
                     input,
                     self.asset_root
                 );

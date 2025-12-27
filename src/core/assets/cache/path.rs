@@ -75,9 +75,22 @@ pub(crate) fn compute_asset_path_info(asset_root: &Path, input: &Path) -> AssetP
 
     let (relative_for_key, is_portable, reason) =
         if let Ok(rel) = resolved_canon.strip_prefix(&root_canon) {
-            (rel.to_path_buf(), true, None)
+            // Even if the resolved path is under asset_root on this machine, an *absolute input*
+            // is usually not portable across machines. We still use the relative path as the key
+            // to keep caching stable.
+            let reason = if input_was_absolute {
+                Some("absolute input path is not portable")
+            } else {
+                None
+            };
+            (rel.to_path_buf(), !input_was_absolute, reason)
         } else if let Ok(rel) = resolved_lex.strip_prefix(&root) {
-            (rel.to_path_buf(), true, None)
+            let reason = if input_was_absolute {
+                Some("absolute input path is not portable")
+            } else {
+                None
+            };
+            (rel.to_path_buf(), !input_was_absolute, reason)
         } else if input_was_absolute {
             (
                 resolved_canon.clone(),

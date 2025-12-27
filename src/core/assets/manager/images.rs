@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use super::super::cache::AssetPathInfo;
 use super::super::cache::ImageKey;
 use super::super::error::{AssetError, AssetResult};
 use super::super::image::{ImageAsset, ImageId};
@@ -11,14 +12,22 @@ impl AssetManager {
     pub fn load_image<P: AsRef<Path>>(&mut self, path: P) -> AssetResult<ImageId> {
         let info = self.compute_path_info(path.as_ref());
         self.enforce_path_policy(path.as_ref(), &info)?;
-        let key_path = info.key.clone();
-        let path_buf = info.io_path.clone();
-        let key = ImageKey { path: key_path };
+        self.load_image_from_path_info(&info)
+    }
+
+    pub(crate) fn load_image_from_path_info(
+        &mut self,
+        info: &AssetPathInfo,
+    ) -> AssetResult<ImageId> {
+        let key = ImageKey {
+            path: info.key.clone(),
+        };
 
         if let Some(existing) = self.images.get_existing_id(&key) {
             return Ok(existing);
         }
 
+        let path_buf = info.io_path.clone();
         let dyn_img = image::open(&path_buf).map_err(|source| AssetError::Image {
             source,
             path: path_buf.clone(),
