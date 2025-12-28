@@ -28,6 +28,9 @@ pub enum AssetError {
     #[error("Invalid font format")]
     InvalidFont,
 
+    #[error("Invalid font size: {font_size}")]
+    InvalidFontSize { font_size: f32 },
+
     #[error("Out of memory")]
     OutOfMemory,
 

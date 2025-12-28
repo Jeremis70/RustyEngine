@@ -4,7 +4,7 @@ use crate::core::engine::Engine;
 use crate::core::engine_state::EngineState;
 use crate::graphics::Text;
 use crate::math::{Color, Vec2};
-use crate::render::{Drawable, context::RenderContext};
+use crate::render::{Drawable, Rectangle, context::RenderContext};
 
 /// Font rendering demo showing the layout() + draw() pattern
 pub fn install(engine: &mut Engine) {
@@ -14,21 +14,29 @@ pub fn install(engine: &mut Engine) {
     // Then we can scale to any size in Text instances!
     let font_id = engine
         .assets
-        .load_font(
-            r#"D:\Code\Rust\RustyEngine\src\game\assets\LEMONMILK-Regular.otf"#,
-            48.0,
-        )
+        .load_font("src/game/assets/LEMONMILK-Regular.otf", 48.0)
         .expect("Failed to load font");
     info!("Font loaded with ID: {:?}", font_id);
 
     // Create text instances at different sizes from the same font atlas
     let mut text1 = Text::new(font_id, "Large Text (48px)", 48, Color::WHITE);
     text1.transform.position = Vec2::new(50.0, 50.0);
+    text1.transform.scale = Vec2::new(1.15, 1.15);
+    text1.transform.rotation = 0.25;
     text1.layout(&engine.assets);
+    info!(
+        "text1 topleft={:?} size={:?}",
+        text1.transform.position,
+        text1.size()
+    );
 
     let mut text2 = Text::new(font_id, "Medium Text (32px)", 32, Color::rgb(100, 200, 255));
     text2.transform.position = Vec2::new(50.0, 120.0);
+    // Test: rotate around center but keep top-left anchored.
+    text2.transform.origin = Vec2::new(0.5, 0.5);
     text2.layout(&engine.assets);
+    text2.set_topleft(Vec2::new(50.0, 120.0));
+    text2.transform.rotation = -0.20;
 
     let mut text3 = Text::new(font_id, "Small Text (16px)", 16, Color::rgb(255, 200, 100));
     text3.transform.position = Vec2::new(50.0, 170.0);
@@ -114,6 +122,28 @@ pub fn install(engine: &mut Engine) {
 
     engine.events.on_render(move |ctx: &mut RenderContext| {
         ctx.clear(Color::from((30, 30, 40)));
+
+        // --- Tests visuels: bounding boxes ---
+        // But: vérifier que `transform.position` = coin haut-gauche du texte et que `size()` est cohérent.
+        let mut draw_bounds = |t: &Text, color: Color| {
+            let mut r = Rectangle::new_outline(Vec2::ZERO, t.size(), color, 1.0);
+            r.transform = t.transform.clone();
+            r.draw(ctx);
+        };
+
+        draw_bounds(&text1, Color::rgb(255, 255, 255));
+        draw_bounds(&text2, Color::rgb(100, 200, 255));
+        draw_bounds(&text3, Color::rgb(255, 200, 100));
+        draw_bounds(&text4, Color::rgb(150, 255, 150));
+        draw_bounds(&test_numbers, Color::rgb(255, 255, 255));
+        draw_bounds(&test_punctuation, Color::rgb(200, 200, 200));
+        draw_bounds(&test_brackets, Color::rgb(200, 200, 200));
+        draw_bounds(&test_symbols, Color::rgb(200, 200, 200));
+        draw_bounds(&test_accents, Color::rgb(255, 100, 100));
+        draw_bounds(&test_spaces, Color::rgb(255, 255, 255));
+        draw_bounds(&test_long, Color::rgb(255, 200, 100));
+        draw_bounds(&test_newlines, Color::rgb(150, 255, 200));
+        draw_bounds(&test_empty, Color::rgb(255, 255, 255));
 
         // Draw texts at different sizes from the same font atlas!
         text1.draw(ctx);

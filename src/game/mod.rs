@@ -1,6 +1,6 @@
 pub mod demos;
 
-const ACTIVE_DEMO: DemoSelector = DemoSelector::DoomLike;
+const ACTIVE_DEMO: DemoSelector = DemoSelector::Font;
 
 #[derive(Clone, Copy)]
 enum DemoSelector {

@@ -12,6 +12,10 @@ impl AssetManager {
         use fontdue::Font;
         use std::collections::HashMap;
 
+        if !font_size.is_finite() || font_size <= 0.0 {
+            return Err(AssetError::InvalidFontSize { font_size });
+        }
+
         let info = self.compute_path_info(path.as_ref());
         self.enforce_path_policy(path.as_ref(), &info)?;
         let key_path = info.key.clone();
