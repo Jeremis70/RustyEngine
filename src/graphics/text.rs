@@ -19,6 +19,12 @@ pub struct Text {
     /// Additional spacing between letters in pixels.
     pub letter_spacing: f32,
 
+    /// Tab width expressed in number of spaces.
+    pub tab_width_spaces: u32,
+
+    /// Replacement character used when a glyph is missing from the atlas.
+    pub fallback_char: char,
+
     /// Cached sprite data for rendering. Updated via layout().
     sprites: Vec<SpriteDrawData>,
 
@@ -26,6 +32,9 @@ pub struct Text {
     /// Used to apply `transform.origin` consistently.
     bounds_min: Vec2,
     bounds_max: Vec2,
+
+    /// Layout size (pen-advance based), including line height and whitespace.
+    layout_size: Vec2,
 }
 
 impl Text {
@@ -41,9 +50,12 @@ impl Text {
             transform,
             line_height: 1.0,
             letter_spacing: 0.0,
+            tab_width_spaces: 4,
+            fallback_char: '?',
             sprites: Vec::new(),
             bounds_min: Vec2::ZERO,
             bounds_max: Vec2::ZERO,
+            layout_size: Vec2::ZERO,
         }
     }
 
@@ -67,9 +79,12 @@ impl Text {
             transform,
             line_height,
             letter_spacing,
+            tab_width_spaces: 4,
+            fallback_char: '?',
             sprites: Vec::new(),
             bounds_min: Vec2::ZERO,
             bounds_max: Vec2::ZERO,
+            layout_size: Vec2::ZERO,
         }
     }
 
@@ -80,6 +95,12 @@ impl Text {
             (self.bounds_max.x - self.bounds_min.x).max(0.0),
             (self.bounds_max.y - self.bounds_min.y).max(0.0),
         )
+    }
+
+    /// Layout size in pixels based on pen advance (includes whitespace and line height).
+    /// Useful for UI layout where you want "reserved space".
+    pub fn layout_size(&self) -> Vec2 {
+        self.layout_size
     }
 
     fn transform_point(&self, local: Vec2) -> Vec2 {
@@ -204,6 +225,7 @@ impl Text {
             self.sprites.clear();
             self.bounds_min = Vec2::ZERO;
             self.bounds_max = Vec2::ZERO;
+            self.layout_size = Vec2::ZERO;
             return;
         };
 
@@ -218,6 +240,7 @@ impl Text {
         // Reset bounds; will be expanded while laying out.
         self.bounds_min = Vec2::ZERO;
         self.bounds_max = Vec2::ZERO;
+        self.layout_size = Vec2::ZERO;
 
         if self.font_size == 0 {
             return;
@@ -267,15 +290,34 @@ impl Text {
 
         let default_line_advance = font.line_height * line_height_mul * scale;
 
+        let space_advance = font.glyphs.get(&' ').map(|g| g.advance).unwrap_or(0.0);
+
+        let mut max_line_width = 0.0f32;
+
         for ch in self.content.chars() {
             if ch == '\n' {
+                max_line_width = max_line_width.max(pen_x);
                 pen_x = 0.0;
                 pen_y += default_line_advance;
                 continue;
             }
 
-            let Some(glyph) = font.glyphs.get(&ch) else {
+            if ch == '\t' {
+                let tab_adv = (space_advance + letter_spacing) * scale;
+                pen_x += tab_adv * self.tab_width_spaces.max(1) as f32;
                 continue;
+            }
+
+            // Missing glyph handling: try the requested char, then fallback, then advance like space.
+            let glyph = match font.glyphs.get(&ch) {
+                Some(g) => g,
+                None => match font.glyphs.get(&self.fallback_char) {
+                    Some(g) => g,
+                    None => {
+                        pen_x += (space_advance + letter_spacing) * scale;
+                        continue;
+                    }
+                },
             };
 
             // Skip glyphs with no visual representation
@@ -284,10 +326,18 @@ impl Text {
                 continue;
             }
 
-            // Calculate glyph position: pen + bearing (relative to text origin), scaled
+            // Calculate glyph position in local space.
+            //
+            // fontdue metrics:
+            // - xmin: offset of the *left-most* bitmap edge from the origin.
+            // - ymin: offset of the *bottom-most* bitmap edge from the baseline (Y-up).
+            //   So the bitmap top edge in Y-up is: (ymin + height).
+            //
+            // Our engine coordinates are Y-down. If `pen_y` represents the baseline in Y-down,
+            // then bitmap_top_y_down = baseline_y_down - (ymin + height).
             let glyph_pos = Vec2::new(
                 pen_x + glyph.bearing.x * scale,
-                pen_y + glyph.bearing.y * scale,
+                pen_y - (glyph.bearing.y + glyph.size.y) * scale,
             );
 
             let glyph_size = glyph.size * scale;
@@ -312,6 +362,14 @@ impl Text {
             });
 
             pen_x += (glyph.advance + letter_spacing) * scale;
+        }
+
+        max_line_width = max_line_width.max(pen_x);
+        if !self.content.is_empty() {
+            self.layout_size = Vec2::new(
+                max_line_width.max(0.0),
+                (pen_y + default_line_advance).max(0.0),
+            );
         }
 
         if any_bounds {

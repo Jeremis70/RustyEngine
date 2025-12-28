@@ -13,21 +13,34 @@ pub struct FontMarker;
 /// Unique identifier for a font asset.
 pub type FontId = AssetId<FontMarker>;
 
+/// Which characters should be rasterized into the font atlas.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FontCharset {
+    /// ASCII printable characters (U+0020..=U+007E).
+    Ascii,
+    /// Latin-1 (ISO-8859-1) printable-ish characters (U+0020..=U+00FF).
+    Latin1,
+    /// Explicit list of characters to rasterize.
+    ///
+    /// Tip: include at least ' ' and '?' for spacing + fallback.
+    Custom(Vec<char>),
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Glyph {
-    /// UV min dans l’atlas (0–1)
+    /// UV min in the atlas (0–1)
     pub uv_min: Vec2,
 
-    /// UV max dans l’atlas (0–1)
+    /// UV max in the atlas (0–1)
     pub uv_max: Vec2,
 
-    /// Taille du glyph en pixels
+    /// Glyph size in pixels
     pub size: Vec2,
 
-    /// Décalage depuis le curseur (baseline)
+    /// Offset from the pen position (baseline)
     pub bearing: Vec2,
 
-    /// Avance du curseur après ce caractère
+    /// Pen advance after this character
     pub advance: f32,
 }
 
@@ -35,13 +48,13 @@ pub struct Glyph {
 #[derive(Debug, Clone)]
 pub struct FontAsset {
     pub data: Vec<u8>,
-    /// Texture contenant tous les glyphes (font atlas)
+    /// Texture containing all glyphs (font atlas)
     pub atlas: ImageId,
 
-    /// Infos par caractère
+    /// Per-character glyph information
     pub glyphs: HashMap<char, Glyph>,
-    /// Taille de la font en pixels
+    /// Font size in pixels
     pub font_size: f32,
-    /// Hauteur d’une ligne (baseline → baseline)
+    /// Line height (baseline → baseline)
     pub line_height: f32,
 }

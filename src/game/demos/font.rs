@@ -14,7 +14,7 @@ pub fn install(engine: &mut Engine) {
     // Then we can scale to any size in Text instances!
     let font_id = engine
         .assets
-        .load_font("src/game/assets/LEMONMILK-Regular.otf", 48.0)
+        .load_font_latin1("src\\game\\assets\\Minecraft.ttf", 48.0)
         .expect("Failed to load font");
     info!("Font loaded with ID: {:?}", font_id);
 
@@ -123,8 +123,8 @@ pub fn install(engine: &mut Engine) {
     engine.events.on_render(move |ctx: &mut RenderContext| {
         ctx.clear(Color::from((30, 30, 40)));
 
-        // --- Tests visuels: bounding boxes ---
-        // But: vérifier que `transform.position` = coin haut-gauche du texte et que `size()` est cohérent.
+        // --- Visual tests: bounding boxes ---
+        // Goal: verify that `transform.position` is the text's tight top-left and that `size()` is consistent.
         let mut draw_bounds = |t: &Text, color: Color| {
             let mut r = Rectangle::new_outline(Vec2::ZERO, t.size(), color, 1.0);
             r.transform = t.transform.clone();

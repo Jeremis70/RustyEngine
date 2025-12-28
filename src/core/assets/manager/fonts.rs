@@ -2,25 +2,73 @@ use std::path::Path;
 
 use super::super::cache::FontKey;
 use super::super::error::{AssetError, AssetResult};
-use super::super::font::{FontAsset, FontId, Glyph};
+use super::super::font::{FontAsset, FontCharset, FontId, Glyph};
 use super::super::image::ImageAsset;
 use super::AssetManager;
 
 impl AssetManager {
     pub fn load_font<P: AsRef<Path>>(&mut self, path: P, font_size: f32) -> AssetResult<FontId> {
+        // Preserve the original behavior by default (ASCII printable only).
+        self.load_font_with_charset(path, font_size, FontCharset::Ascii)
+    }
+
+    /// Convenience: rasterize ASCII printable (U+0020..=U+007E).
+    pub fn load_font_ascii<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        font_size: f32,
+    ) -> AssetResult<FontId> {
+        self.load_font_with_charset(path, font_size, FontCharset::Ascii)
+    }
+
+    /// Convenience: rasterize Latin-1 (U+0020..=U+00FF). Useful for accents like éàèùç.
+    pub fn load_font_latin1<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        font_size: f32,
+    ) -> AssetResult<FontId> {
+        self.load_font_with_charset(path, font_size, FontCharset::Latin1)
+    }
+
+    /// Load a font and rasterize a specific set of characters into the atlas.
+    ///
+    /// Note: the charset is part of the cache key, so loading the same path/size with a
+    /// different charset will produce a different `FontId`.
+    pub fn load_font_with_charset<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        font_size: f32,
+        charset: FontCharset,
+    ) -> AssetResult<FontId> {
         use crate::math::Vec2;
         use fontdue::Font;
         use std::collections::HashMap;
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
 
         if !font_size.is_finite() || font_size <= 0.0 {
             return Err(AssetError::InvalidFontSize { font_size });
         }
 
+        let charset_hash: u64 = match &charset {
+            FontCharset::Ascii => 1,
+            FontCharset::Latin1 => 2,
+            FontCharset::Custom(chars) => {
+                // Stable hash: sort + dedup before hashing.
+                let mut v = chars.clone();
+                v.sort_unstable();
+                v.dedup();
+                let mut hasher = DefaultHasher::new();
+                v.hash(&mut hasher);
+                hasher.finish()
+            }
+        };
+
         let info = self.compute_path_info(path.as_ref());
         self.enforce_path_policy(path.as_ref(), &info)?;
         let key_path = info.key.clone();
         let path_buf = info.io_path.clone();
-        let key = FontKey::new(key_path, font_size);
+        let key = FontKey::new(key_path, font_size, charset_hash);
 
         if let Some(existing) = self.fonts.get_existing_id(&key) {
             return Ok(existing);
@@ -48,10 +96,25 @@ impl AssetManager {
         let mut pen_y = 0u32;
         let mut row_height = 0u32;
 
-        // ASCII printable
-        for ch in 32u8..=126 {
-            let ch = ch as char;
+        let mut chars: Vec<char> = match charset {
+            FontCharset::Ascii => (0x20u32..=0x7Eu32).filter_map(char::from_u32).collect(),
+            FontCharset::Latin1 => (0x20u32..=0xFFu32).filter_map(char::from_u32).collect(),
+            FontCharset::Custom(mut v) => {
+                // Ensure we have sane defaults for spacing + fallback.
+                if !v.contains(&' ') {
+                    v.push(' ');
+                }
+                if !v.contains(&'?') {
+                    v.push('?');
+                }
+                v
+            }
+        };
 
+        chars.sort_unstable();
+        chars.dedup();
+
+        for ch in chars {
             let (metrics, bitmap) = font.rasterize(ch, font_size);
 
             if metrics.width == 0 || metrics.height == 0 {
@@ -61,6 +124,9 @@ impl AssetManager {
                         uv_min: Vec2::ZERO,
                         uv_max: Vec2::ZERO,
                         size: Vec2::ZERO,
+                        // fontdue metrics:
+                        // - xmin: offset of the left-most bitmap edge from the origin.
+                        // - ymin: offset of the bottom-most bitmap edge from the baseline (Y-up).
                         bearing: Vec2::new(metrics.xmin as f32, metrics.ymin as f32),
                         advance: metrics.advance_width,
                     },
@@ -106,6 +172,9 @@ impl AssetManager {
                     uv_min,
                     uv_max,
                     size: Vec2::new(metrics.width as f32, metrics.height as f32),
+                    // fontdue metrics:
+                    // - xmin: offset of the left-most bitmap edge from the origin.
+                    // - ymin: offset of the bottom-most bitmap edge from the baseline (Y-up).
                     bearing: Vec2::new(metrics.xmin as f32, metrics.ymin as f32),
                     advance: metrics.advance_width,
                 },

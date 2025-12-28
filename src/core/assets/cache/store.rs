@@ -88,13 +88,15 @@ pub(crate) struct ImageKey {
 pub(crate) struct FontKey {
     pub(crate) path: String,
     pub(crate) size_bits: u32,
+    pub(crate) charset_hash: u64,
 }
 
 impl FontKey {
-    pub(crate) fn new(path: String, font_size: f32) -> Self {
+    pub(crate) fn new(path: String, font_size: f32, charset_hash: u64) -> Self {
         Self {
             path,
             size_bits: font_size.to_bits(),
+            charset_hash,
         }
     }
 }
