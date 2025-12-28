@@ -2,7 +2,8 @@ use super::callbacks::{Callbacks, Mut, Ref2};
 use super::input::Input;
 use super::input_events::{
     AxisMotionEvent, GestureEvent, ImeEvent, Key, KeyEvent, Modifiers, MouseButtonEvent,
-    MouseWheelDelta, PanEvent, Position, Size, Theme, Touch, TouchpadPressureEvent,
+    MouseMotionEvent, MouseWheelDelta, PanEvent, Position, Size, Theme, Touch,
+    TouchpadPressureEvent,
 };
 use crate::backend::surface_provider::SurfaceProvider;
 use crate::core::engine_state::EngineState;
@@ -33,6 +34,7 @@ pub trait EventHandlerApi {
     fn on_mouse_button_pressed(&mut self, _ev: &MouseButtonEvent) {}
     fn on_mouse_button_released(&mut self, _ev: &MouseButtonEvent) {}
     fn on_mouse_move(&mut self, _pos: &Position) {}
+    fn on_mouse_motion(&mut self, _ev: &MouseMotionEvent) {}
     fn on_mouse_wheel(&mut self, _delta: &MouseWheelDelta) {}
     fn on_mouse_enter(&mut self) {}
     fn on_mouse_leave(&mut self) {}
@@ -90,6 +92,7 @@ pub struct EventHandler {
     on_mouse_button_pressed: Callbacks<MouseButtonEvent>,
     on_mouse_button_released: Callbacks<MouseButtonEvent>,
     pub on_mouse_move: Callbacks<Position>,
+    pub on_mouse_motion: Callbacks<MouseMotionEvent>,
     pub on_mouse_wheel: Callbacks<MouseWheelDelta>,
     pub on_mouse_enter: Callbacks<()>,
     pub on_mouse_leave: Callbacks<()>,
@@ -148,6 +151,7 @@ impl EventHandler {
             on_mouse_button_pressed: Callbacks::new(),
             on_mouse_button_released: Callbacks::new(),
             on_mouse_move: Callbacks::new(),
+            on_mouse_motion: Callbacks::new(),
             on_mouse_wheel: Callbacks::new(),
             on_mouse_enter: Callbacks::new(),
             on_mouse_leave: Callbacks::new(),
@@ -212,6 +216,10 @@ impl EventHandler {
     }
     pub fn on_mouse_move<F: FnMut(&Position) + 'static>(&mut self, f: F) -> usize {
         self.on_mouse_move.add(f)
+    }
+
+    pub fn on_mouse_motion<F: FnMut(&MouseMotionEvent) + 'static>(&mut self, f: F) -> usize {
+        self.on_mouse_motion.add(f)
     }
     pub fn on_mouse_wheel<F: FnMut(&MouseWheelDelta) + 'static>(&mut self, f: F) -> usize {
         self.on_mouse_wheel.add(f)
@@ -380,6 +388,11 @@ impl EventHandlerApi for EventHandler {
         let last = self.input.mouse_position();
         self.input.on_mouse_move(*pos, last);
         self.on_mouse_move.invoke(pos);
+    }
+
+    fn on_mouse_motion(&mut self, ev: &MouseMotionEvent) {
+        self.input.on_mouse_motion(ev.delta_x, ev.delta_y);
+        self.on_mouse_motion.invoke(ev);
     }
 
     fn on_mouse_wheel(&mut self, delta: &MouseWheelDelta) {

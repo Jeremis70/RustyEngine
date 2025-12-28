@@ -10,6 +10,10 @@ pub struct Rectangle {
     pub transform: Transform,
     pub size: Vec2,
     pub color: Color,
+
+    pub filled: bool,
+    pub outline_thickness: f32,
+    pub outline_color: Color,
 }
 
 impl Rectangle {
@@ -18,7 +22,29 @@ impl Rectangle {
             transform: Transform::at(position),
             size,
             color,
+
+            filled: true,
+            outline_thickness: 0.0,
+            outline_color: color,
         }
+    }
+
+    /// Pygame-like outline rectangle (non-filled) with a line thickness.
+    pub fn new_outline(position: Vec2, size: Vec2, color: Color, thickness: f32) -> Self {
+        let mut rect = Self::new(position, size, color);
+        rect.filled = false;
+        rect.outline_thickness = thickness;
+        rect.outline_color = color;
+        rect
+    }
+
+    pub fn set_filled(&mut self, filled: bool) {
+        self.filled = filled;
+    }
+
+    pub fn set_outline(&mut self, thickness: f32, color: Color) {
+        self.outline_thickness = thickness;
+        self.outline_color = color;
     }
 
     fn world_corners(&self) -> [Vec2; 4] {
@@ -156,45 +182,73 @@ impl Transform2d for Rectangle {
 
 impl Drawable for Rectangle {
     fn draw(&self, ctx: &mut RenderContext) {
-        let [tl, tr, bl, br] = self.world_corners();
+        let mut push_quad = |local_min: Vec2, local_max: Vec2, color: Color| {
+            let tl = self.transform_point(local_min);
+            let tr = self.transform_point(Vec2::new(local_max.x, local_min.y));
+            let bl = self.transform_point(Vec2::new(local_min.x, local_max.y));
+            let br = self.transform_point(local_max);
 
-        // Convert pixel space → NDC
-        let tl = ctx.to_ndc(tl);
-        let tr = ctx.to_ndc(tr);
-        let bl = ctx.to_ndc(bl);
-        let br = ctx.to_ndc(br);
+            // Convert pixel space → NDC
+            let tl = ctx.to_ndc(tl);
+            let tr = ctx.to_ndc(tr);
+            let bl = ctx.to_ndc(bl);
+            let br = ctx.to_ndc(br);
 
-        let color = self.color.to_linear_rgba();
+            let color = color.to_linear_rgba();
 
-        // Two triangles (CCW)
-        let vertices = [
-            Vertex {
-                pos: tl.to_array(),
-                color,
-            },
-            Vertex {
-                pos: tr.to_array(),
-                color,
-            },
-            Vertex {
-                pos: bl.to_array(),
-                color,
-            },
-            Vertex {
-                pos: tr.to_array(),
-                color,
-            },
-            Vertex {
-                pos: br.to_array(),
-                color,
-            },
-            Vertex {
-                pos: bl.to_array(),
-                color,
-            },
-        ];
+            // Two triangles (CCW)
+            let vertices = [
+                Vertex {
+                    pos: tl.to_array(),
+                    color,
+                },
+                Vertex {
+                    pos: tr.to_array(),
+                    color,
+                },
+                Vertex {
+                    pos: bl.to_array(),
+                    color,
+                },
+                Vertex {
+                    pos: tr.to_array(),
+                    color,
+                },
+                Vertex {
+                    pos: br.to_array(),
+                    color,
+                },
+                Vertex {
+                    pos: bl.to_array(),
+                    color,
+                },
+            ];
 
-        ctx.extend(&vertices);
+            ctx.extend(&vertices);
+        };
+
+        // Fill
+        if self.filled {
+            push_quad(Vec2::ZERO, self.size, self.color);
+        }
+
+        // Outline (pygame-style thickness)
+        if self.outline_thickness > 0.0 {
+            let w = self.size.x.max(0.0);
+            let h = self.size.y.max(0.0);
+            if w > 0.0 && h > 0.0 {
+                let t = self.outline_thickness.max(0.5).min(w * 0.5).min(h * 0.5);
+
+                // Top
+                push_quad(Vec2::new(0.0, 0.0), Vec2::new(w, t), self.outline_color);
+                // Bottom
+                push_quad(Vec2::new(0.0, h - t), Vec2::new(w, h), self.outline_color);
+                // Left
+                push_quad(Vec2::new(0.0, t), Vec2::new(t, h - t), self.outline_color);
+                // Right
+                push_quad(Vec2::new(w - t, t), Vec2::new(w, h - t), self.outline_color);
+            }
+        }
     }
 }
 

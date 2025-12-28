@@ -7,7 +7,7 @@ use crate::render::context::RenderContext;
 
 /// Minimal scaffold that illustrates where to plug update and render code.
 pub fn install(engine: &mut Engine) {
-    info!("Template demo chargée: ajoutez votre logique ici.");
+    info!("Template demo loaded");
 
     engine.events.on_update(|_state: &EngineState| {
         // Ajoutez ici votre logique de jeu (physique, IA, etc.).

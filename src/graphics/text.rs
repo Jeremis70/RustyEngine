@@ -4,6 +4,8 @@ use crate::{
     render::{Drawable, RenderContext, SpriteDrawData, Transform2d},
 };
 
+use crate::core::assets::font::FontAsset;
+
 pub struct Text {
     pub font: FontId,
     pub content: String,
@@ -60,11 +62,18 @@ impl Text {
     /// Must be called after creating or modifying the text, and requires access to AssetManager.
     /// After calling this, draw() can be used without needing AssetManager.
     pub fn layout(&mut self, assets: &AssetManager) {
-        self.sprites.clear();
-
         let Some(font) = assets.get_font(self.font) else {
+            self.sprites.clear();
             return;
         };
+
+        self.layout_with_font_asset(font);
+    }
+
+    /// Layout using a previously retrieved `FontAsset`.
+    /// Useful for dynamic text in render callbacks where `AssetManager` isn't available.
+    pub fn layout_with_font_asset(&mut self, font: &FontAsset) {
+        self.sprites.clear();
 
         // Calculate scale factor: target size / atlas size
         let scale = self.font_size as f32 / font.font_size;

@@ -37,20 +37,24 @@ fn main() {
         }
     };
 
-    let config = WindowConfig::builder()
-        .width(700)
-        .height(400)
-        .resizable(true)
-        .fullscreen(false)
-        .continuous(true)
-        .build();
+    // Let the active demo configure the window (cursor lock, icon, etc.)
+    game::install_active_demo(&mut engine);
+
+    // If the demo didn't provide a config, fall back to this default.
+    let config = engine.take_window_config().unwrap_or_else(|| {
+        WindowConfig::builder()
+            .width(700)
+            .height(400)
+            .resizable(true)
+            .fullscreen(false)
+            .continuous(true)
+            .build()
+    });
 
     if let Err(e) = engine.create_window(config) {
         error!("Failed to create window: {}", e);
         return;
     }
-
-    game::install_active_demo(&mut engine);
 
     if let Err(e) = engine.run() {
         error!("Engine run failed: {}", e);

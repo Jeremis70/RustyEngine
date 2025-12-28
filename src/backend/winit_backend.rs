@@ -1,7 +1,7 @@
 use winit::application::ApplicationHandler;
-use winit::dpi::LogicalSize;
+use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::window::{Fullscreen, Window, WindowId};
+use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 
 use crate::backend::surface_provider::SurfaceProvider;
 use crate::backend::window_backend::{BackendError, BackendResult, WindowBackend};
@@ -12,12 +12,25 @@ use crate::core::events::{
     TouchpadPressureEvent,
 };
 use log::error;
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use winit::event::{
-    ElementState, Ime as WinitIme, MouseScrollDelta, TouchPhase as WinitTouchPhase, WindowEvent,
+    DeviceEvent, ElementState, Ime as WinitIme, MouseScrollDelta, TouchPhase as WinitTouchPhase,
+    WindowEvent,
 };
 use winit::keyboard::{KeyCode, PhysicalKey};
+
+fn load_window_icon(path: &Path) -> Result<winit::window::Icon, String> {
+    let bytes = std::fs::read(path)
+        .map_err(|e| format!("Failed to read icon file {}: {e}", path.display()))?;
+    let img = image::load_from_memory(&bytes)
+        .map_err(|e| format!("Failed to decode icon image {}: {e}", path.display()))?;
+    let rgba = img.to_rgba8();
+    let (w, h) = rgba.dimensions();
+    winit::window::Icon::from_rgba(rgba.into_raw(), w, h)
+        .map_err(|e| format!("Invalid icon image {}: {e:?}", path.display()))
+}
 
 // Full conversion from winit keyboard to our Key enum
 fn convert_key(physical_key: PhysicalKey) -> Key {
@@ -296,6 +309,12 @@ pub struct WinitBackend {
     mouse_position: Position,
     fixed_frame_duration: Option<Duration>,
     last_frame_instant: Instant,
+
+    want_cursor_grab: bool,
+    want_cursor_visible: bool,
+
+    // Cursor-warp based mouse look
+    ignore_next_cursor_move: bool,
 }
 
 impl WinitBackend {
@@ -312,7 +331,43 @@ impl WinitBackend {
             mouse_position: Position { x: 0.0, y: 0.0 },
             fixed_frame_duration: None,
             last_frame_instant: Instant::now(),
+
+            want_cursor_grab: false,
+            want_cursor_visible: true,
+
+            ignore_next_cursor_move: false,
         })
+    }
+
+    fn window_center(win: &Window) -> PhysicalPosition<f64> {
+        let size = win.inner_size();
+        PhysicalPosition::new(size.width as f64 * 0.5, size.height as f64 * 0.5)
+    }
+
+    fn apply_cursor_settings(&self) {
+        let Some(win) = self.window.as_ref() else {
+            return;
+        };
+
+        win.set_cursor_visible(self.want_cursor_visible);
+
+        if self.want_cursor_grab {
+            // Prefer confined + warp-to-center (most reliable for consistent deltas).
+            // Fallback to locked if confined isn't supported.
+            let _ = win
+                .set_cursor_grab(CursorGrabMode::Confined)
+                .or_else(|_| win.set_cursor_grab(CursorGrabMode::Locked));
+        } else {
+            let _ = win.set_cursor_grab(CursorGrabMode::None);
+        }
+    }
+
+    fn release_cursor(&self) {
+        let Some(win) = self.window.as_ref() else {
+            return;
+        };
+        let _ = win.set_cursor_grab(CursorGrabMode::None);
+        win.set_cursor_visible(true);
     }
 
     /// Set target FPS for frame limiting
@@ -352,6 +407,10 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
         // Create the window when the application resumes
         let config = self.backend.pending_config.take().unwrap_or_default();
 
+        // Cursor capture config (FPS-style)
+        self.backend.want_cursor_grab = config.cursor_grab.unwrap_or(false);
+        self.backend.want_cursor_visible = config.cursor_visible.unwrap_or(true);
+
         // Capture redraw policy for use during the loop
         self.backend.continuous = config.continuous.unwrap_or(false);
         if let Some(fps) = config.target_fps {
@@ -382,10 +441,43 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
 
         match event_loop.create_window(attrs) {
             Ok(win) => {
+                // Apply icon before storing window.
+                // On Windows, leaving the icon untouched can show platform/winit defaults (and icon caching can be confusing).
+                // Make the behavior explicit:
+                // - Some(path): try to load and set
+                // - None OR load failure: explicitly clear to let the OS/executable icon take over
+                match config.icon_path.as_deref() {
+                    Some(path) => match load_window_icon(path) {
+                        Ok(icon) => win.set_window_icon(Some(icon)),
+                        Err(msg) => {
+                            error!("{msg}");
+                            win.set_window_icon(None);
+                        }
+                    },
+                    None => {
+                        win.set_window_icon(None);
+                    }
+                }
+
                 // Provide surface to engine via handler, then request a redraw
                 self.backend.window = Some(win);
                 if let Some(w) = self.backend.window.as_ref() {
                     self.handler.on_surface_ready(w as &dyn SurfaceProvider);
+
+                    // Apply cursor behavior after the window is created.
+                    self.backend.apply_cursor_settings();
+
+                    // If using FPS mouse, start centered.
+                    if self.backend.want_cursor_grab {
+                        let center = WinitBackend::window_center(w);
+                        self.backend.ignore_next_cursor_move = true;
+                        let _ = w.set_cursor_position(center);
+                        self.backend.mouse_position = Position {
+                            x: center.x as f32,
+                            y: center.y as f32,
+                        };
+                    }
+
                     w.request_redraw();
                 }
             }
@@ -407,6 +499,18 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
                     width: physical_size.width,
                     height: physical_size.height,
                 });
+                // Keep cursor centered when using FPS mouse.
+                if self.backend.want_cursor_grab
+                    && let Some(win) = self.backend.window.as_ref()
+                {
+                    let center = WinitBackend::window_center(win);
+                    self.backend.ignore_next_cursor_move = true;
+                    let _ = win.set_cursor_position(center);
+                    self.backend.mouse_position = Position {
+                        x: center.x as f32,
+                        y: center.y as f32,
+                    };
+                }
                 if let Some(win) = self.backend.window.as_ref() {
                     win.request_redraw();
                 }
@@ -427,6 +531,14 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
 
             WindowEvent::Focused(focused) => {
                 self.handler.on_focus(&focused);
+
+                // Common game behavior: when focus is lost, release the cursor so the user can alt-tab.
+                // When focus returns, re-apply desired cursor capture.
+                if focused {
+                    self.backend.apply_cursor_settings();
+                } else {
+                    self.backend.release_cursor();
+                }
             }
 
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
@@ -477,12 +589,43 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
 
             // === MOUSE ===
             WindowEvent::CursorMoved { position, .. } => {
-                let pos = Position {
-                    x: position.x as f32,
-                    y: position.y as f32,
-                };
-                self.backend.mouse_position = pos;
-                self.handler.on_mouse_move(&pos);
+                // FPS mouse look: convert absolute cursor to relative delta by warping to center.
+                if self.backend.want_cursor_grab {
+                    if self.backend.ignore_next_cursor_move {
+                        self.backend.ignore_next_cursor_move = false;
+                        self.backend.mouse_position = Position {
+                            x: position.x as f32,
+                            y: position.y as f32,
+                        };
+                        return;
+                    }
+
+                    if let Some(win) = self.backend.window.as_ref() {
+                        let center = WinitBackend::window_center(win);
+                        let dx = position.x - center.x;
+                        let dy = position.y - center.y;
+
+                        self.handler
+                            .on_mouse_motion(&crate::core::events::MouseMotionEvent {
+                                delta_x: dx as f32,
+                                delta_y: dy as f32,
+                            });
+
+                        self.backend.ignore_next_cursor_move = true;
+                        let _ = win.set_cursor_position(center);
+                        self.backend.mouse_position = Position {
+                            x: center.x as f32,
+                            y: center.y as f32,
+                        };
+                    }
+                } else {
+                    let pos = Position {
+                        x: position.x as f32,
+                        y: position.y as f32,
+                    };
+                    self.backend.mouse_position = pos;
+                    self.handler.on_mouse_move(&pos);
+                }
             }
 
             WindowEvent::MouseInput { state, button, .. } => {
@@ -606,6 +749,21 @@ impl<'a> ApplicationHandler for WinitApp<'a> {
             .filter(|_| self.backend.continuous)
         {
             win.request_redraw();
+        }
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        event: DeviceEvent,
+    ) {
+        if let DeviceEvent::MouseMotion { delta } = event {
+            self.handler
+                .on_mouse_motion(&crate::core::events::MouseMotionEvent {
+                    delta_x: delta.0 as f32,
+                    delta_y: delta.1 as f32,
+                });
         }
     }
 }

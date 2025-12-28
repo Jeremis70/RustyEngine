@@ -8,7 +8,8 @@ use crate::core::events::EventHandler;
 use crate::core::events::EventHandlerApi;
 use crate::core::events::{
     AxisMotionEvent, GestureEvent, ImeEvent, KeyEvent, Modifiers, MouseButtonEvent,
-    MouseWheelDelta, PanEvent, Position, Size, Theme, Touch, TouchpadPressureEvent,
+    MouseMotionEvent, MouseWheelDelta, PanEvent, Position, Size, Theme, Touch,
+    TouchpadPressureEvent,
 };
 use crate::render::Renderer;
 use crate::render::context::RenderContext;
@@ -51,6 +52,18 @@ impl Engine {
         config.validate().map_err(BackendError::InvalidConfig)?;
         self.window_config = Some(config.clone());
         self.backend.create_window(config)
+    }
+
+    /// Allow demos/apps to provide a window configuration before calling `create_window`.
+    /// The most recent call wins.
+    pub fn set_window_config(&mut self, config: WindowConfig) {
+        self.window_config = Some(config);
+    }
+
+    /// Take (consume) a previously provided window config.
+    /// Intended for the app entrypoint to call before `create_window`.
+    pub fn take_window_config(&mut self) -> Option<WindowConfig> {
+        self.window_config.take()
     }
 
     /// Run the backend event loop. Returns an error if the backend fails.
@@ -142,6 +155,10 @@ impl Engine {
 
             fn on_mouse_move(&mut self, pos: &Position) {
                 EventHandlerApi::on_mouse_move(self.events, pos);
+            }
+
+            fn on_mouse_motion(&mut self, ev: &MouseMotionEvent) {
+                EventHandlerApi::on_mouse_motion(self.events, ev);
             }
 
             fn on_mouse_wheel(&mut self, delta: &MouseWheelDelta) {

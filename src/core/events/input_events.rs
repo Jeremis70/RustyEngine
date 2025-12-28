@@ -222,6 +222,15 @@ pub struct MouseButtonEvent {
     pub position: Position,
 }
 
+/// Raw mouse motion (relative), independent of cursor position.
+/// Useful for FPS/DOOM-like camera rotation where the cursor would otherwise
+/// hit the window edge.
+#[derive(Debug, Clone, Copy)]
+pub struct MouseMotionEvent {
+    pub delta_x: f32,
+    pub delta_y: f32,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct TouchpadPressureEvent {
     pub pressure: f32,

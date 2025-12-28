@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 #[derive(Debug, Clone)]
 pub struct WindowConfig {
     pub width: Option<u32>,
@@ -12,6 +14,15 @@ pub struct WindowConfig {
     pub continuous: Option<bool>,
     pub target_fps: Option<u32>,
     pub vsync: Option<bool>,
+
+    /// Whether to grab/lock the cursor inside the window (FPS mouse look).
+    pub cursor_grab: Option<bool>,
+    /// Whether the cursor should be visible.
+    pub cursor_visible: Option<bool>,
+
+    /// Optional path to an image used as the window icon.
+    /// Note: the current build enables PNG/JPEG/BMP decoding via the `image` crate.
+    pub icon_path: Option<PathBuf>,
 }
 
 impl Default for WindowConfig {
@@ -29,6 +40,11 @@ impl Default for WindowConfig {
             continuous: Some(false),
             target_fps: None,
             vsync: Some(false),
+
+            cursor_grab: Some(false),
+            cursor_visible: Some(true),
+
+            icon_path: Some("assets/icons/rust-logo-256x256.png".into()),
         }
     }
 }
@@ -109,6 +125,27 @@ impl WindowConfigBuilder {
     }
     pub fn vsync(mut self, v: bool) -> Self {
         self.config.vsync = Some(v);
+        self
+    }
+
+    pub fn cursor_grab(mut self, v: bool) -> Self {
+        self.config.cursor_grab = Some(v);
+        self
+    }
+
+    pub fn cursor_visible(mut self, v: bool) -> Self {
+        self.config.cursor_visible = Some(v);
+        self
+    }
+
+    pub fn icon_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.config.icon_path = Some(path.into());
+        self
+    }
+
+    /// Disable the window icon (sets `icon_path` to None).
+    pub fn no_icon(mut self) -> Self {
+        self.config.icon_path = None;
         self
     }
     pub fn build(self) -> WindowConfig {

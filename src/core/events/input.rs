@@ -282,7 +282,16 @@ impl Input {
     }
 
     pub(crate) fn on_mouse_move(&mut self, pos: Position, last_pos: Position) {
-        self.mouse_delta = (pos.x - last_pos.x, pos.y - last_pos.y);
+        // Accumulate per-frame mouse delta. This plays nicely with FPS cursor locking
+        // where CursorMoved may report the same position (0 delta), while raw motion
+        // events still provide meaningful deltas.
+        self.mouse_delta.0 += pos.x - last_pos.x;
+        self.mouse_delta.1 += pos.y - last_pos.y;
         self.mouse_position = pos;
+    }
+
+    pub(crate) fn on_mouse_motion(&mut self, dx: f32, dy: f32) {
+        self.mouse_delta.0 += dx;
+        self.mouse_delta.1 += dy;
     }
 }
