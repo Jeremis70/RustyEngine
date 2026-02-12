@@ -13,6 +13,10 @@ env:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Code formatting verification
   format:
@@ -47,19 +51,6 @@ jobs:
         toolchain: stable
         components: clippy
 
-    - name: Cache Cargo
-      uses: actions/cache@v5
-      with:
-        path: |
-          ~/.cargo/registry/index
-          ~/.cargo/registry/cache
-          ~/.cargo/git/db
-          target
-        key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-clippy-
-          ${{ runner.os }}-cargo-
-
     - name: Install ALSA development libraries
       run: |
         sudo apt-get update
@@ -73,6 +64,9 @@ jobs:
     name: Security Audit
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: write
     steps:
     - name: Checkout
       uses: actions/checkout@v6
@@ -80,11 +74,10 @@ jobs:
     - name: Setup Rust
       uses: actions-rust-lang/setup-rust-toolchain@v1
 
-    - name: Install cargo-audit
-      run: cargo install cargo-audit
-
     - name: Run security audit
-      run: cargo audit
+      uses: rustsec/audit-check@v2.0.0
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
 
   # Build and tests on multiple platforms
   test:
@@ -112,19 +105,6 @@ jobs:
       with:
         toolchain: ${{ matrix.rust }}
 
-    - name: Cache Cargo
-      uses: actions/cache@v5
-      with:
-        path: |
-          ~/.cargo/registry/index
-          ~/.cargo/registry/cache
-          ~/.cargo/git/db
-          target
-        key: ${{ runner.os }}-${{ matrix.rust }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ matrix.rust }}-cargo-
-          ${{ runner.os }}-cargo-
-
     # Linux: Install ALSA
     - name: Install ALSA development libraries
       if: runner.os == 'Linux'
@@ -136,13 +116,13 @@ jobs:
       run: cargo build --verbose --all-features
 
     - name: Run tests
-      run: cargo test --verbose --all-features
+      run: cargo test --verbose --all-targets --all-features
 
     - name: Build (Release)
       run: cargo build --release --verbose --all-features
 
     - name: Run tests (Release)
-      run: cargo test --release --verbose --all-features
+      run: cargo test --release --verbose --all-targets --all-features
 
   # Documentation build
   docs:
@@ -155,19 +135,6 @@ jobs:
 
     - name: Setup Rust
       uses: actions-rust-lang/setup-rust-toolchain@v1
-
-    - name: Cache Cargo
-      uses: actions/cache@v5
-      with:
-        path: |
-          ~/.cargo/registry/index
-          ~/.cargo/registry/cache
-          ~/.cargo/git/db
-          target
-        key: ${{ runner.os }}-cargo-docs-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-docs-
-          ${{ runner.os }}-cargo-
 
     - name: Install ALSA development libraries
       run: |
