@@ -1,6 +1,6 @@
 # RustyEngine
 
-[![License: LGPL v3+](https://img.shields.io/badge/License-LGPL%20v3%2B-blue.svg)](LICENSE)
+[![License: MPL-2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](LICENSE)
 
 ## Description
 
@@ -12,5 +12,7 @@ The engine focuses on a clear architecture, strong safety guarantees, and modern
 
 ## License
 
-This project is licensed under the GNU Lesser General Public License v3.0 (LGPL-3.0).
+This project is licensed under the Mozilla Public License Version 2.0 (MPL-2.0)
 See [LICENSE](LICENSE) for details.
+
+Note: Older revisions of this repository may have been published under a different license. If you are using an older commit/tag, refer to the license file in that specific revision.

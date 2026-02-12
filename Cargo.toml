@@ -6,7 +6,7 @@ homepage = "https://github.com/Jeremis70/RustyEngine"
 repository = "https://github.com/Jeremis70/RustyEngine"
 authors = ["Jérémie Caron"]
 readme = "README.md"
-license = "LGPL-3.0-or-later"
+license = "MPL-2.0"
 description = "A high-level, Rust-based game engine with a flexible renderer, audio system, and asset management, designed for power users."
 keywords = ["game-engine", "gamedev", "wgpu", "winit", "audio"]
 categories = ["game-development", "graphics"]
@@ -21,5 +21,9 @@ pollster = "0.4.0"
 raw-window-handle = "0.6.2"
 bytemuck = { version = "1.20", features = ["derive"] }
 rodio = "0.21.1"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp"] }
+image = { version = "0.25", default-features = false, features = [
+    "png",
+    "jpeg",
+    "bmp",
+] }
 fontdue = "0.9.3"
