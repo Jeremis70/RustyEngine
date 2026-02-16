@@ -13,6 +13,7 @@ use crate::core::events::{
 };
 use crate::render::Renderer;
 use crate::render::context::RenderContext;
+use std::collections::HashMap;
 use std::path::Path;
 
 pub struct Engine {
@@ -76,7 +77,8 @@ impl Engine {
             state: &'a mut EngineState,
             window_size: &'a mut (u32, u32),
             window_config: Option<&'a WindowConfig>,
-            assets: &'a AssetManager,
+            assets: &'a mut AssetManager,
+            uploaded_image_revisions: HashMap<crate::core::assets::ImageId, u64>,
         }
 
         impl<'a> EventHandlerApi for Forwarder<'a> {
@@ -88,6 +90,8 @@ impl Engine {
                         let _ =
                             self.renderer
                                 .upload_image(id, image.width, image.height, &image.data);
+                        let rev = self.assets.image_revision(id).unwrap_or(0);
+                        self.uploaded_image_revisions.insert(id, rev);
                     }
                     self.initialized = true;
                 }
@@ -229,6 +233,10 @@ impl Engine {
                 // RenderContext callbacks (immediate-mode drawing)
                 let mut ctx = RenderContext::new(*self.window_size);
                 self.events.on_render.invoke(&mut ctx);
+                // Optional render callbacks that need access to assets for runtime image generation.
+                self.events
+                    .on_render_with_assets
+                    .invoke(&mut ctx, self.assets);
                 if let Some(color) = ctx.clear_color {
                     let [r, g, b, a] = color.to_linear_rgba();
                     self.renderer.set_clear_color([r, g, b, a]);
@@ -237,6 +245,26 @@ impl Engine {
                     self.renderer.submit(&ctx.vertices);
                 }
                 if !ctx.sprites.is_empty() {
+                    // Upload any sprite images that were loaded/generated at runtime,
+                    // and re-upload when an image is updated in-place.
+                    for sprite in &ctx.sprites {
+                        let id = sprite.image_id;
+                        let current_rev = self.assets.image_revision(id).unwrap_or(0);
+                        let needs_upload = self
+                            .uploaded_image_revisions
+                            .get(&id)
+                            .is_none_or(|&rev| rev != current_rev);
+
+                        if needs_upload && let Some(image) = self.assets.get_image(id) {
+                            let _ = self.renderer.upload_image(
+                                id,
+                                image.width,
+                                image.height,
+                                &image.data,
+                            );
+                            self.uploaded_image_revisions.insert(id, current_rev);
+                        }
+                    }
                     self.renderer.draw_sprites(&ctx.sprites, *self.window_size);
                 }
                 if self.initialized {
@@ -255,7 +283,8 @@ impl Engine {
             state: &mut self.state,
             window_size: &mut self.window_size,
             window_config: self.window_config.as_ref(),
-            assets: &self.assets,
+            assets: &mut self.assets,
+            uploaded_image_revisions: HashMap::new(),
         };
 
         self.backend.run(&mut forwarder)

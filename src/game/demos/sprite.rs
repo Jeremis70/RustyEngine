@@ -29,10 +29,7 @@ pub fn install(engine: &mut Engine) {
 
     let sprite_ids = engine
         .assets
-        .load_spritesheet(
-            r#"D:\Code\Rust\RustyEngine\src\game\assets\Player Idle 48x48.png"#,
-            config,
-        )
+        .load_spritesheet(r#"src/game/assets/Player Idle 48x48.png"#, config)
         .unwrap();
 
     // --- Create manual animated sprite (old method) ---

@@ -6,6 +6,8 @@ pub struct Ref;
 pub struct Mut;
 /// Callback mode for 2-arguments callbacks (`FnMut(&A, &B)`), used as `Callbacks<(A, B), Ref2>`.
 pub struct Ref2;
+/// Callback mode for 2-arguments mutable callbacks (`FnMut(&mut A, &mut B)`), used as `Callbacks<(A, B), Mut2>`.
+pub struct Mut2;
 
 pub trait CallbackMode<T> {
     type Callback: ?Sized;
@@ -21,6 +23,10 @@ impl<T> CallbackMode<T> for Mut {
 
 impl<A, B> CallbackMode<(A, B)> for Ref2 {
     type Callback = dyn FnMut(&A, &B);
+}
+
+impl<A, B> CallbackMode<(A, B)> for Mut2 {
+    type Callback = dyn FnMut(&mut A, &mut B);
 }
 
 /// A single, centered callback list type.
@@ -125,6 +131,33 @@ impl<A, B> Callbacks<(A, B), Ref2> {
         for (_, callback) in &mut self.callbacks {
             callback(a, b);
         }
+    }
+}
+
+impl<A, B> Callbacks<(A, B), Mut2> {
+    pub fn add<F>(&mut self, f: F) -> usize
+    where
+        F: FnMut(&mut A, &mut B) + 'static,
+    {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.callbacks.push((id, Box::new(f)));
+        id
+    }
+
+    pub fn invoke(&mut self, a: &mut A, b: &mut B) {
+        for (_, callback) in &mut self.callbacks {
+            callback(a, b);
+        }
+    }
+}
+
+impl<A, B, F> std::ops::AddAssign<F> for Callbacks<(A, B), Mut2>
+where
+    F: FnMut(&mut A, &mut B) + 'static,
+{
+    fn add_assign(&mut self, rhs: F) {
+        self.add(rhs);
     }
 }
 

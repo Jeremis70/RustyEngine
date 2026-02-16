@@ -48,6 +48,10 @@ impl AssetManager {
         let id = ImageId::new();
         self.images.insert_keyed(id, key, image);
         self.current_memory_bytes += image_size;
+
+        let rev = self.next_image_revision;
+        self.next_image_revision = self.next_image_revision.wrapping_add(1);
+        self.image_revisions.insert(id, rev);
         Ok(id)
     }
 
@@ -59,7 +63,57 @@ impl AssetManager {
         let id = ImageId::new();
         self.images.insert_unkeyed(id, asset);
         self.current_memory_bytes += image_size;
+
+        let rev = self.next_image_revision;
+        self.next_image_revision = self.next_image_revision.wrapping_add(1);
+        self.image_revisions.insert(id, rev);
         Ok(id)
+    }
+
+    /// Get the current revision for an image.
+    ///
+    /// The revision increases whenever the image is created or updated.
+    pub fn image_revision(&self, id: ImageId) -> Option<u64> {
+        self.image_revisions.get(&id).copied()
+    }
+
+    /// Update an existing image's pixel buffer (RGBA8) while keeping its ImageId stable.
+    ///
+    /// This is useful for CPU-generated textures that need to be refreshed at runtime.
+    pub fn update_image_from_asset(&mut self, id: ImageId, asset: ImageAsset) -> AssetResult<()> {
+        let new_size = asset.data.len();
+        if !self.images.contains_id(id) {
+            return Err(AssetError::Io {
+                source: std::io::Error::new(std::io::ErrorKind::NotFound, "image id not found"),
+                path: self.asset_root.clone(),
+            });
+        }
+
+        // Ensure capacity for any additional bytes.
+        let old_size = self
+            .images
+            .by_id
+            .get(&id)
+            .map(|e| e.asset.data.len())
+            .unwrap_or(0);
+        if new_size > old_size {
+            self.ensure_capacity_for(new_size - old_size)?;
+        }
+
+        if let Some(entry) = self.images.by_id.get_mut(&id) {
+            entry.asset = asset;
+        }
+
+        // Update memory accounting.
+        self.current_memory_bytes = self
+            .current_memory_bytes
+            .saturating_sub(old_size)
+            .saturating_add(new_size);
+
+        let rev = self.next_image_revision;
+        self.next_image_revision = self.next_image_revision.wrapping_add(1);
+        self.image_revisions.insert(id, rev);
+        Ok(())
     }
 
     /// Check if an image with the given ID exists.
@@ -84,6 +138,7 @@ impl AssetManager {
             self.current_memory_bytes = self
                 .current_memory_bytes
                 .saturating_sub(entry.asset.data.len());
+            self.image_revisions.remove(&id);
             log::debug!(
                 "Unloaded image {:?}, memory now: {}",
                 id,
@@ -103,6 +158,7 @@ impl AssetManager {
             .map(|entry| entry.asset.data.len())
             .sum();
         self.images.clear();
+        self.image_revisions.clear();
         self.current_memory_bytes = self.current_memory_bytes.saturating_sub(freed);
         log::debug!(
             "Unloaded all images, memory now: {}",

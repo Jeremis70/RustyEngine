@@ -1,6 +1,6 @@
 pub mod demos;
 
-const ACTIVE_DEMO: DemoSelector = DemoSelector::Font;
+const ACTIVE_DEMO: DemoSelector = DemoSelector::Grass;
 
 #[derive(Clone, Copy)]
 enum DemoSelector {
@@ -11,6 +11,7 @@ enum DemoSelector {
     Font,
     AssetCache,
     DoomLike,
+    Grass,
 }
 
 pub fn install_active_demo(engine: &mut crate::core::engine::Engine) {
@@ -22,10 +23,11 @@ pub fn install_active_demo(engine: &mut crate::core::engine::Engine) {
         DemoSelector::Font => demos::font::install(engine),
         DemoSelector::AssetCache => demos::asset_cache::install(engine),
         DemoSelector::DoomLike => demos::doom_like::install(engine),
+        DemoSelector::Grass => demos::grass::install(engine),
     }
 }
 
-pub fn list_available() -> [&'static str; 7] {
+pub fn list_available() -> [&'static str; 8] {
     [
         "ActionsDemo",
         "Showcase",
@@ -34,5 +36,6 @@ pub fn list_available() -> [&'static str; 7] {
         "Sprite",
         "AssetCache",
         "DoomLike",
+        "Grass",
     ]
 }

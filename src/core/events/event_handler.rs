@@ -1,4 +1,4 @@
-use super::callbacks::{Callbacks, Mut, Ref2};
+use super::callbacks::{Callbacks, Mut, Mut2, Ref2};
 use super::input::Input;
 use super::input_events::{
     AxisMotionEvent, GestureEvent, ImeEvent, Key, KeyEvent, Modifiers, MouseButtonEvent,
@@ -6,6 +6,7 @@ use super::input_events::{
     TouchpadPressureEvent,
 };
 use crate::backend::surface_provider::SurfaceProvider;
+use crate::core::assets::AssetManager;
 use crate::core::engine_state::EngineState;
 use crate::render::context::RenderContext;
 use std::path::{Path, PathBuf};
@@ -124,6 +125,7 @@ pub struct EventHandler {
 
     // === RENDER CONTEXT CALLBACKS ===
     pub on_render: Callbacks<RenderContext, Mut>,
+    pub on_render_with_assets: Callbacks<(RenderContext, AssetManager), Mut2>,
 
     // === INPUT SNAPSHOT ===
     pub on_keys_state_changed: Callbacks<Vec<Key>>,
@@ -169,6 +171,7 @@ impl EventHandler {
             on_redraw: Callbacks::new(),
             on_update: Callbacks::new(),
             on_render: Callbacks::new(),
+            on_render_with_assets: Callbacks::new(),
             on_keys_state_changed: Callbacks::new(),
             current_modifiers: Modifiers::default(),
             input: Input::new(),
@@ -229,6 +232,17 @@ impl EventHandler {
     }
     pub fn on_render<F: FnMut(&mut RenderContext) + 'static>(&mut self, f: F) -> usize {
         self.on_render.add(f)
+    }
+
+    /// Render hook variant that also provides mutable access to the AssetManager.
+    ///
+    /// This is intended for demos/systems that need to generate images at runtime
+    /// (e.g. CPU-composited tiles) and then draw them as sprites in the same frame.
+    pub fn on_render_with_assets<F: FnMut(&mut RenderContext, &mut AssetManager) + 'static>(
+        &mut self,
+        f: F,
+    ) -> usize {
+        self.on_render_with_assets.add(f)
     }
     /// Primary gameplay hook: update logic (poll input here).
     pub fn on_update<F: FnMut(&EngineState) + 'static>(&mut self, mut f: F) -> usize {

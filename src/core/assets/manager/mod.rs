@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::cache::{AssetStore, FontKey, ImageKey, compute_asset_path_info};
@@ -20,6 +21,11 @@ pub struct AssetManager {
     pub(crate) images: AssetStore<ImageId, ImageKey, ImageAsset>,
     pub(crate) fonts: AssetStore<FontId, FontKey, FontAsset>,
     pub(crate) sounds: AssetStore<SoundId, SoundKey, SoundAsset>,
+
+    // Image upload invalidation.
+    // Incremented whenever an image is created or updated.
+    pub(crate) image_revisions: HashMap<ImageId, u64>,
+    pub(crate) next_image_revision: u64,
     pub(crate) asset_root: PathBuf,
     pub(crate) path_policy: AssetPathPolicy,
     pub(crate) max_memory_bytes: usize,
@@ -121,6 +127,8 @@ impl AssetManager {
             images: AssetStore::new(),
             fonts: AssetStore::new(),
             sounds: AssetStore::new(),
+            image_revisions: HashMap::new(),
+            next_image_revision: 1,
             asset_root,
             path_policy: AssetPathPolicy::AllowAndWarn,
             max_memory_bytes: max_bytes,
